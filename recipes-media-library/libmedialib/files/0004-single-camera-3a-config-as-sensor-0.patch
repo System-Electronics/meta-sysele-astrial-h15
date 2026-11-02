@@ -1,0 +1,80 @@
+From: System Electronics
+Subject: [PATCH] medialib: give the 3A configuration of a single camera to sensor 0
+
+libvsi3a opens /usr/bin/isp_3aconfig_0 and no other index. In profile mode the
+media library writes the 3A configuration of a camera on sensor N as
+isp_3aconfig_N, so with the camera on any sensor but 0 the 3A never sees it and
+falls back to /usr/bin/3aconfig.json, written for the GStreamer chain and its
+XML calibration. The image has the right luminance and a wrong colour cast.
+
+With a single camera on a sensor other than 0, also link isp_3aconfig_0 to the
+same file; remove only that link, never its target, when the files are
+replaced or restored. With two cameras sensor 0 has its own file and nothing
+changes. A regular file at that path is left alone.
+
+Upstream-Status: Pending
+
+---
+diff --git a/hailo-media-library/media_library/src/isp/isp_manager.cpp b/hailo-media-library/media_library/src/isp/isp_manager.cpp
+index 8ca9844..c6f6fc9 100644
+--- a/hailo-media-library/media_library/src/isp/isp_manager.cpp
++++ b/hailo-media-library/media_library/src/isp/isp_manager.cpp
+@@ -1275,6 +1275,22 @@ static void safe_remove_symlink_target(const std::filesystem::path &symlink)
+     }
+ }
+ 
++// libvsi3a opens /usr/bin/isp_3aconfig_0 and no other index, so the 3A configuration of a camera on a sensor other
++// than 0 is ignored (it falls back to /usr/bin/3aconfig.json, written for another calibration). With a single
++// camera on sensor N the alias isp_3aconfig_0 points at the same file as isp_3aconfig_N. Only the alias is
++// removed, never its target, which belongs to isp_3aconfig_N.
++static const std::filesystem::path ISP_3A_CONFIG_ALIAS = "/usr/bin/isp_3aconfig_0";
++
++static void remove_3a_config_alias(const std::filesystem::path &target)
++{
++    std::error_code ec;
++    if (std::filesystem::is_symlink(std::filesystem::symlink_status(ISP_3A_CONFIG_ALIAS, ec)) &&
++        std::filesystem::read_symlink(ISP_3A_CONFIG_ALIAS, ec) == target)
++    {
++        std::filesystem::remove(ISP_3A_CONFIG_ALIAS, ec);
++    }
++}
++
+ static bool write_to_file(const std::string &file_path, const std::string &file_content)
+ {
+     LOGGER__MODULE__DEBUG(MODULE_NAME, "Configuring {} config file", file_path);
+@@ -1318,6 +1334,10 @@ bool IspManager::remove_current_isp_config_files_symlinks()
+     auto &symlink_sensor = symlink_sensor_opt.value();
+     try
+     {
++        std::error_code alias_ec;
++        const std::filesystem::path previous_3a_target = std::filesystem::read_symlink(symlink_3aconfig, alias_ec);
++        if (!alias_ec)
++            remove_3a_config_alias(previous_3a_target);
+         safe_remove_symlink_target(symlink_3aconfig);
+         safe_remove_symlink_target(symlink_sensor);
+     }
+@@ -1395,6 +1415,24 @@ bool IspManager::modify_isp_config_files()
+     {
+         std::filesystem::create_symlink(new_3aconfig_filepath, symlink_3aconfig);
+         std::filesystem::create_symlink(new_sensor_entry_filepath, symlink_sensor);
++
++        // A single camera on a sensor other than 0: libvsi3a reads the alias (see above). With two cameras
++        // sensor 0 has its own isp_3aconfig_0 and nothing is touched.
++        if (sensor_index != 0 && !m_config_manager_interactor->is_dual_sensor())
++        {
++            std::error_code ec;
++            const auto alias_status = std::filesystem::symlink_status(ISP_3A_CONFIG_ALIAS, ec);
++            if (!std::filesystem::exists(alias_status) || std::filesystem::is_symlink(alias_status))
++            {
++                std::filesystem::remove(ISP_3A_CONFIG_ALIAS, ec);
++                std::filesystem::create_symlink(new_3aconfig_filepath, ISP_3A_CONFIG_ALIAS);
++            }
++            else
++            {
++                LOGGER__MODULE__WARNING(MODULE_NAME, "{} is a regular file, the 3A configuration of sensor {} is not used",
++                                        ISP_3A_CONFIG_ALIAS.string(), sensor_index);
++            }
++        }
+     }
+     catch (std::filesystem::filesystem_error &e)
+     {
