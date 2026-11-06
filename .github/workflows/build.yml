@@ -34,7 +34,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-large-runner
+    runs-on: self-hosted
     # I permessi NON si dichiarano qui: un reusable non può chiedere più di quanto
     # il chiamante gli concede (altrimenti "Invalid workflow file"). Li decide chi
     # chiama: main=write (release), dev-build/bump=read. Vedi `permissions:` nei chiamanti.
