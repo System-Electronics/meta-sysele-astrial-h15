@@ -58,9 +58,12 @@ jobs:
             curl python-is-python3 bmap-tools u-boot-tools
           sudo locale-gen en_US.UTF-8
 
-          # Install KAS
-          sudo pip3 install "kas==5.3"
-          kas --version
+      - name: Install KAS
+        run: |
+          sudo apt-get install -y python3-venv
+          python3 -m venv "$RUNNER_TEMP/kas-venv"
+          "$RUNNER_TEMP/kas-venv/bin/pip" install "kas==5.3"
+          echo "$RUNNER_TEMP/kas-venv/bin" >> "$GITHUB_PATH"
 
       - name: Checkout repository
         uses: actions/checkout@v4
