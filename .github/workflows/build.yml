@@ -80,6 +80,34 @@ jobs:
           # invariato per release/schedule). Il bump passa qui il branch bump/poky-*.
           ref: ${{ inputs.ref }}
 
+      - name: Persistent Yocto cache on the runner
+        # Solo build dev (use_cache) su runner self-hosted. sstate e downloads vivono in
+        # ~/yocto-cache, fuori da _work: sopravvivono a una workspace ripulita o a un
+        # runner riregistrato. Nel workspace resta un link, cosi' kas/astrial-h15-cache.yml
+        # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Le build ufficiali
+        # (use_cache=false) non passano di qui e compilano da zero.
+        if: inputs.use_cache && runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          PERSIST="$HOME/yocto-cache"
+          mkdir -p "$PERSIST"
+          # Prima volta: se nel workspace c'e' gia' una cache vera (non un link), si sposta.
+          if [ -d yocto-cache ] && [ ! -L yocto-cache ]; then
+            for d in sstate-cache downloads; do
+              [ -d "yocto-cache/$d" ] || continue
+              if [ -e "$PERSIST/$d" ]; then
+                echo "WARN: $PERSIST/$d esiste gia', lascio yocto-cache/$d dov'e'"
+              else
+                mv "yocto-cache/$d" "$PERSIST/$d"
+              fi
+            done
+            rmdir yocto-cache 2>/dev/null || mv yocto-cache "yocto-cache.old.$(date +%s)"
+          fi
+          ln -sfn "$PERSIST" yocto-cache
+          ls -ld yocto-cache
+          du -sh "$PERSIST"/* 2>/dev/null || true
+          df -h "$PERSIST" | tail -1
+
       - name: Setup Build Environment
         run: |
           # Clone the official Hailo 1.12 repository
