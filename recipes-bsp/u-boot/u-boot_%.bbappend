@@ -21,7 +21,11 @@ do_configure:prepend() {
     # Kconfig". L'ordine di `find` dipende dal filesystem, quindi il difetto compare solo
     # su certe macchine (misurato sulla VPS, non sui runner di GitHub).
     find ${S} -name 'Kconfig*' -type f | while read -r f; do
-        [ -n "$(tail -c1 "$f")" ] && echo >> "$f"
+        # if e non `[ ] &&`: sull'ultimo file il test e' falso e uno stato 1 farebbe
+        # fallire tutta la funzione (la shell di bitbake gira con set -e).
+        if [ -n "$(tail -c1 "$f")" ]; then
+            echo >> "$f"
+        fi
     done
 
     # Create directories
