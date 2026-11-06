@@ -65,6 +65,13 @@ jobs:
           "$RUNNER_TEMP/kas-venv/bin/pip" install "kas==5.3"
           echo "$RUNNER_TEMP/kas-venv/bin" >> "$GITHUB_PATH"
 
+      - name: Clean leftovers of previous runs
+        run: |
+          # Il runner e' persistente: la workspace sopravvive fra un run e l'altro e
+          # `git clone meta-hailo-soc` fallirebbe sul secondo run. La cache Yocto sta in
+          # yocto-cache/, che NON si tocca.
+          rm -rf meta-hailo-soc release-files failure-logs /tmp/failed.txt /tmp/failed-recipes.txt
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -155,7 +162,8 @@ jobs:
           fi
 
       - name: Restore Yocto Cache (sstate + downloads)
-        if: inputs.use_cache
+        # Sul runner self-hosted sstate e downloads restano su disco in yocto-cache/.
+        if: inputs.use_cache && runner.environment != 'self-hosted'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -323,7 +331,7 @@ jobs:
         # Salva anche su build fallita: lo sstate parziale è valido e velocizza il run
         # successivo. best-effort: a budget cache raggiunto (read-only) il save fallisce
         # senza rompere il workflow.
-        if: always() && inputs.use_cache
+        if: always() && inputs.use_cache && runner.environment != 'self-hosted'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
