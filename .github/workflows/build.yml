@@ -81,19 +81,19 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Persistent Yocto cache on the runner
-        # Solo build dev (use_cache) su runner self-hosted. sstate e downloads vivono in
-        # ~/yocto-cache, fuori da _work: sopravvivono a una workspace ripulita o a un
+        # ~/yocto-cache sta fuori da _work: sopravvive a una workspace ripulita o a un
         # runner riregistrato. Nel workspace resta un link, cosi' kas/astrial-h15-cache.yml
-        # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Le build ufficiali
-        # (use_cache=false) non passano di qui e compilano da zero.
-        if: inputs.use_cache && runner.environment == 'self-hosted'
+        # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Contiene sstate e
+        # downloads (le sole dev build li usano: le ufficiali compilano da zero) e CVE_CHECK,
+        # il database CVE tenuto aggiornato dal timer della VPS, che leggono tutte le build.
+        if: runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           PERSIST="$HOME/yocto-cache"
           mkdir -p "$PERSIST"
           # Prima volta: se nel workspace c'e' gia' una cache vera (non un link), si sposta.
           if [ -d yocto-cache ] && [ ! -L yocto-cache ]; then
-            for d in sstate-cache downloads; do
+            for d in sstate-cache downloads CVE_CHECK; do
               [ -d "yocto-cache/$d" ] || continue
               if [ -e "$PERSIST/$d" ]; then
                 echo "WARN: $PERSIST/$d esiste gia', lascio yocto-cache/$d dov'e'"
@@ -204,9 +204,24 @@ jobs:
           restore-keys: |
             yocto-cache-${{ runner.os }}-
 
+      - name: Check the CVE database on the runner
+        if: inputs.sbom != 'none' && runner.environment == 'self-hosted'
+        run: |
+          # Il database lo tiene aggiornato il timer della VPS. Senza, la build prosegue ma
+          # il referto CVE manca (il bbappend su cve-update-nvd2-native lo permette), e una
+          # release senza referto non deve passare inosservata.
+          DB="$YOCTO_CACHE_ROOT/CVE_CHECK/nvdcve_2-2.db"
+          if [ ! -s "$DB" ]; then
+            echo "::error::No CVE database at $DB: the VPS update timer has not produced one"
+            exit 1
+          fi
+          AGE=$(( ( $(date +%s) - $(stat -c %Y "$DB") ) / 3600 ))
+          echo "CVE database: $(du -h "$DB" | cut -f1), updated ${AGE} h ago"
+          [ "$AGE" -le 48 ] || echo "::warning::CVE database is ${AGE} h old"
+
       - name: Restore the CVE database
         id: cve_db
-        if: inputs.sbom != 'none'
+        if: inputs.sbom != 'none' && runner.environment != 'self-hosted'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.YOCTO_CACHE_ROOT }}/CVE_CHECK
@@ -369,7 +384,7 @@ jobs:
           key: yocto-cache-${{ runner.os }}-${{ github.run_id }}
 
       - name: Save the CVE database
-        if: always() && inputs.sbom != 'none'
+        if: always() && inputs.sbom != 'none' && runner.environment != 'self-hosted'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.YOCTO_CACHE_ROOT }}/CVE_CHECK
