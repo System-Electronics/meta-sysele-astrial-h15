@@ -34,7 +34,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-large-runner
+    runs-on: self-hosted
     # I permessi NON si dichiarano qui: un reusable non può chiedere più di quanto
     # il chiamante gli concede (altrimenti "Invalid workflow file"). Li decide chi
     # chiama: main=write (release), dev-build/bump=read. Vedi `permissions:` nei chiamanti.
@@ -58,9 +58,19 @@ jobs:
             curl python-is-python3 bmap-tools u-boot-tools
           sudo locale-gen en_US.UTF-8
 
-          # Install KAS
-          sudo pip3 install "kas==5.3"
-          kas --version
+      - name: Install KAS
+        run: |
+          sudo apt-get install -y python3-venv
+          python3 -m venv "$RUNNER_TEMP/kas-venv"
+          "$RUNNER_TEMP/kas-venv/bin/pip" install "kas==5.3"
+          echo "$RUNNER_TEMP/kas-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Clean leftovers of previous runs
+        run: |
+          # Il runner e' persistente: la workspace sopravvive fra un run e l'altro e
+          # `git clone meta-hailo-soc` fallirebbe sul secondo run. La cache Yocto sta in
+          # yocto-cache/, che NON si tocca.
+          rm -rf meta-hailo-soc release-files failure-logs /tmp/failed.txt /tmp/failed-recipes.txt
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,6 +79,34 @@ jobs:
           # ref vuoto = checkout del ref che ha innescato il workflow (comportamento
           # invariato per release/schedule). Il bump passa qui il branch bump/poky-*.
           ref: ${{ inputs.ref }}
+
+      - name: Persistent Yocto cache on the runner
+        # Solo build dev (use_cache) su runner self-hosted. sstate e downloads vivono in
+        # ~/yocto-cache, fuori da _work: sopravvivono a una workspace ripulita o a un
+        # runner riregistrato. Nel workspace resta un link, cosi' kas/astrial-h15-cache.yml
+        # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Le build ufficiali
+        # (use_cache=false) non passano di qui e compilano da zero.
+        if: inputs.use_cache && runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          PERSIST="$HOME/yocto-cache"
+          mkdir -p "$PERSIST"
+          # Prima volta: se nel workspace c'e' gia' una cache vera (non un link), si sposta.
+          if [ -d yocto-cache ] && [ ! -L yocto-cache ]; then
+            for d in sstate-cache downloads; do
+              [ -d "yocto-cache/$d" ] || continue
+              if [ -e "$PERSIST/$d" ]; then
+                echo "WARN: $PERSIST/$d esiste gia', lascio yocto-cache/$d dov'e'"
+              else
+                mv "yocto-cache/$d" "$PERSIST/$d"
+              fi
+            done
+            rmdir yocto-cache 2>/dev/null || mv yocto-cache "yocto-cache.old.$(date +%s)"
+          fi
+          ln -sfn "$PERSIST" yocto-cache
+          ls -ld yocto-cache
+          du -sh "$PERSIST"/* 2>/dev/null || true
+          df -h "$PERSIST" | tail -1
 
       - name: Setup Build Environment
         run: |
@@ -152,7 +190,8 @@ jobs:
           fi
 
       - name: Restore Yocto Cache (sstate + downloads)
-        if: inputs.use_cache
+        # Sul runner self-hosted sstate e downloads restano su disco in yocto-cache/.
+        if: inputs.use_cache && runner.environment != 'self-hosted'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -320,7 +359,7 @@ jobs:
         # Salva anche su build fallita: lo sstate parziale è valido e velocizza il run
         # successivo. best-effort: a budget cache raggiunto (read-only) il save fallisce
         # senza rompere il workflow.
-        if: always() && inputs.use_cache
+        if: always() && inputs.use_cache && runner.environment != 'self-hosted'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:

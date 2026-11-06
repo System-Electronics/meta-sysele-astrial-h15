@@ -14,6 +14,20 @@ SRC_URI += " \
 UBOOT_MACHINE = "astrial-h15_defconfig"
 
 do_configure:prepend() {
+    # scripts/check-config.sh concatena tutti i Kconfig con `cat $(find ...)`. Se uno non
+    # finisce con un newline (drivers/pinctrl/hailo/Kconfig, sorgente Hailo), la sua ultima
+    # riga si incolla alla prima del file che `find` elenca dopo, e lo script non vede piu'
+    # `config INPUT` (drivers/input/Kconfig): "You must add new CONFIG options using
+    # Kconfig". L'ordine di `find` dipende dal filesystem, quindi il difetto compare solo
+    # su certe macchine (misurato sulla VPS, non sui runner di GitHub).
+    find ${S} -name 'Kconfig*' -type f | while read -r f; do
+        # if e non `[ ] &&`: sull'ultimo file il test e' falso e uno stato 1 farebbe
+        # fallire tutta la funzione (la shell di bitbake gira con set -e).
+        if [ -n "$(tail -c1 "$f")" ]; then
+            echo >> "$f"
+        fi
+    done
+
     # Create directories
     install -d ${S}/board/sysele/astrial-h15
     
