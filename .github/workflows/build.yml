@@ -76,16 +76,19 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Persistent Yocto cache on the runner
-        # ~/yocto-cache sta fuori da _work: sopravvive a una workspace ripulita o a un
+        # ~/yocto-cache/h15 sta fuori da _work: sopravvive a una workspace ripulita o a un
         # runner riregistrato. Nel workspace resta un link, cosi' kas/astrial-h15-cache.yml
         # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Contiene sstate e
-        # downloads (le sole dev build li usano: le ufficiali compilano da zero) e CVE_CHECK,
-        # il database CVE tenuto aggiornato dal timer della VPS, che leggono tutte le build.
+        # downloads (le sole dev build li usano: le ufficiali compilano da zero) e un link
+        # CVE_CHECK -> ../cve-db, il database condiviso fra tutti i prodotti che il timer
+        # della VPS tiene aggiornato (il runner e' uno solo per tutta l'organizzazione, vedi
+        # github/STATO.md: la cache e' divisa per prodotto, il database CVE no).
         if: runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
-          PERSIST="$HOME/yocto-cache"
+          PERSIST="$HOME/yocto-cache/h15"
           mkdir -p "$PERSIST"
+          ln -sfn ../cve-db "$PERSIST/CVE_CHECK"
           # Prima volta: se nel workspace c'e' gia' una cache vera (non un link), si sposta.
           if [ -d yocto-cache ] && [ ! -L yocto-cache ]; then
             for d in sstate-cache downloads CVE_CHECK; do
