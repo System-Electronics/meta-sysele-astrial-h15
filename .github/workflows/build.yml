@@ -43,24 +43,19 @@ jobs:
       # Deve combaciare con ${TOPDIR}/../../yocto-cache usato in kas/astrial-h15-cache.yml.
       YOCTO_CACHE_ROOT: ${{ github.workspace }}/yocto-cache
     steps:
-      - name: Install Dependencies
+      - name: Configure environment
         run: |
-          # Configure environment
           echo "BB_ISOLATE_NETWORK=0" >> $GITHUB_ENV
           echo "BB_NO_NETWORK=0" >> $GITHUB_ENV
 
-          # Install required packages for Yocto build
-          sudo apt-get update
-          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
-            chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
-            iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
-            python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
-            curl python-is-python3 bmap-tools u-boot-tools
-          sudo locale-gen en_US.UTF-8
-
       - name: Install KAS
         run: |
-          sudo apt-get install -y python3-venv
+          # Niente "sudo apt-get" qui: l'utente del runner non ha privilegi di root
+          # (separazione voluta, vedi github/T32_incidente_vps.md). I pacchetti di sistema
+          # che servono alla build (build-essential, gawk, texinfo, python3-venv, ...) si
+          # installano una volta sola da root quando si prepara la macchina del runner, non
+          # a ogni esecuzione: l'elenco completo sta in github/STATO.md ("Provisioning del
+          # runner"). Qui, da utente senza sudo, creiamo solo il venv Python per kas.
           python3 -m venv "$RUNNER_TEMP/kas-venv"
           "$RUNNER_TEMP/kas-venv/bin/pip" install "kas==5.3"
           echo "$RUNNER_TEMP/kas-venv/bin" >> "$GITHUB_PATH"
