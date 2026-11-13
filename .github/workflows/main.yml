@@ -2,9 +2,8 @@ name: Astrial H15 Yocto Build and Release
 
 run-name: Astrial H15 Build • ${{ github.ref_name }} • ${{ github.event_name }}
 
-# Build ufficiali (comportamento identico a prima del refactor):
-# no-cache, validazione end-to-end + pubblicazione tag/prerelease.
-# Lo schedulato bisettimanale è la validazione from-scratch voluta (Filippini).
+# Official builds: no-cache, end-to-end validation + tag/prerelease publishing.
+# The biweekly schedule is a from-scratch validation run.
 on:
   workflow_dispatch:
   push:
