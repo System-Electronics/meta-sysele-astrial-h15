@@ -5,13 +5,14 @@
 # leaves this line out and the whole /opt/sysele tree disappears with it.
 IMAGE_INSTALL:append = " sysele-tools evtest sysele-dsi-detection sysele-dsi-touch-test"
 
-# IMAGE_BOOT_FILES mette swupdate-image nella partizione di boot senza dichiararlo:
-# "bitbake core-image-hailo-dev" da solo fallisce su un albero pulito. Non e' circolare,
-# swupdate-image produce solo ext4.gz e non passa da do_image_wic.
+# IMAGE_BOOT_FILES puts swupdate-image in the boot partition without
+# declaring it: building core-image-hailo-dev alone fails on a clean tree.
+# Not circular: swupdate-image only produces ext4.gz and doesn't go through
+# do_image_wic.
 do_image_wic[depends] += "swupdate-image:do_image_complete"
 
-# Con il ripiego A/B acceso servono due cose in piu', e vengono da sole: lo
-# slot-sync, che rimette in ordine la lista dopo una caduta, e un demone che
-# apra /dev/watchdog. Senza il demone nessun avvio fallito viene contato e il
-# ripiego non scatta mai. Spento, questa riga non aggiunge niente.
+# With A/B fallback enabled, two more things are needed and are pulled in
+# automatically: slot-sync, which reorders the list after a crash, and a
+# daemon that opens /dev/watchdog. Without the daemon, no failed boot is
+# ever counted and the fallback never triggers. Disabled, this line adds nothing.
 IMAGE_INSTALL:append = " ${@bb.utils.contains('SYSELE_SCU_AB', '1', 'sysele-slot-sync watchdog', '', d)}"

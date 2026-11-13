@@ -167,9 +167,10 @@ if [ $? -eq 0 ]; then
     if [ "$WITH_B_SLOT" = "1" ]; then
         echo ""
         echo "Programming the B slot (second copy, offset +0x78000)..."
-        # Non sappiamo se il firmware di recupero resti servito dopo la prima
-        # programmazione: se la seconda non parte lo si ricarica e si riprova, invece
-        # di far fallire tutto e costringere a rifare il giro da capo.
+        # We don't know whether the recovery firmware stays loaded after the
+        # first programming pass: if the second one doesn't start, reload it
+        # and retry, instead of failing the whole run and forcing a restart
+        # from scratch.
         if ! program_flash --b-image; then
             echo "Retrying after reloading the recovery firmware..."
             load_recovery_firmware

@@ -13,7 +13,7 @@ RDEPENDS:${PN} += "run-swupdate-script"
 inherit update-rc.d allarch
 
 INITSCRIPT_NAME = "sysele-slot-sync"
-# Prima di hailo_linux_init (99), che dichiara l'avvio riuscito.
+# Before hailo_linux_init (99), which declares the boot successful.
 INITSCRIPT_PARAMS = "start 98 2 3 4 5 ."
 
 do_install() {
