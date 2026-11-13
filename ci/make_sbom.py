@@ -159,19 +159,19 @@ def main():
     doc, st = merge(a.src, a.name, a.lean, a.type, installed)
     a.out.write_text(json.dumps(doc, indent=2))
 
-    print(f"  tipo                 {SBOM_TYPES[a.type][0]}")
-    print(f"  documenti letti      {st['read']}")
-    print(f"  pacchetti            {st['packages']}")
-    print(f"  relazioni            {st['rels']}")
-    print(f"  licenze estratte     {st['lic']}")
-    print(f"  SPDXID in conflitto  {st['collisions']}")
-    print(f"  dimensione           {a.out.stat().st_size/1048576:.1f} MB")
+    print(f"  type                 {SBOM_TYPES[a.type][0]}")
+    print(f"  documents read       {st['read']}")
+    print(f"  packages             {st['packages']}")
+    print(f"  relationships        {st['rels']}")
+    print(f"  extracted licenses   {st['lic']}")
+    print(f"  conflicting SPDXID   {st['collisions']}")
+    print(f"  size                 {a.out.stat().st_size/1048576:.1f} MB")
     if st["dropped"]:
-        print(f"  esclusi (solo host)  {len(st['dropped'])}")
+        print(f"  excluded (host-only) {len(st['dropped'])}")
     if st["empty"]:
-        print(f"  ATTENZIONE: {len(st['empty'])} licenze senza testo: {', '.join(st['empty'][:6])}")
-        print("     una licenza senza testo rende la SBOM incompleta proprio sui")
-        print("     componenti proprietari. Vedi knowledge/sbom.md.")
+        print(f"  WARNING: {len(st['empty'])} licenses with no text: {', '.join(st['empty'][:6])}")
+        print("     a license with no text makes the SBOM incomplete exactly on")
+        print("     proprietary components.")
 
 
 if __name__ == "__main__":

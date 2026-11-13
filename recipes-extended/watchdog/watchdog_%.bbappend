@@ -1,6 +1,7 @@
-# Il demone apre /dev/watchdog e lo nutre. Entra nell'immagine solo con il ripiego A/B
-# acceso (vedi core-image-hailo-dev.bbappend); senza di lui watchdog.open_timeout
-# resetterebbe anche uno slot sano.
+# The daemon opens /dev/watchdog and feeds it. Only in the image when A/B
+# fallback is enabled (see core-image-hailo-dev.bbappend); without it,
+# watchdog.open_timeout would reset even a healthy slot.
 #
-# Parte a S98, hailo_linux_init.sh a S99: lo slot si dichiara buono quando il demone c'e'.
+# Starts at S98, hailo_linux_init.sh at S99: the slot is declared good once
+# the daemon is present.
 INITSCRIPT_PARAMS:${PN} = "start 98 2 3 4 5 . stop 85 0 6 ."
