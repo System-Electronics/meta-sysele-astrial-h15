@@ -1,33 +1,32 @@
 name: Astrial H15 Yocto Build (reusable)
 
-# Reusable build. Un solo posto con la logica di build; i chiamanti decidono:
-#   release   -> cosa pubblicare: none, continuous oppure tagged
-#   use_cache -> se usare la GitHub Actions Cache per SSTATE_DIR + DL_DIR (build dev)
-#   ref       -> branch/commit da compilare (usato dal bump per validare il branch bump/*)
+# Reusable build. One place for the build logic; callers decide:
+#   release   -> what to publish: none, continuous, or tagged
+#   use_cache -> whether to use GitHub Actions Cache for SSTATE_DIR + DL_DIR (dev builds)
+#   ref       -> branch/commit to build (used by the bump workflow to validate bump/* branches)
 #
-# Le build automatiche NON creano piu' un tag per ogni giro. Tre canali distinti:
-#   none        solo artifact effimeri del run. Dev build e validazione del bump.
-#   continuous  riscrive l'unica prerelease "continuous": sempre lo stesso URL per
-#               l'ultimo master costruito, nessun tag nuovo, nessun accumulo.
-#   tagged      release vera sul tag che ha innescato il workflow (v1.2.0, v1.2.0-rc1).
-#               La versione la decide una persona spingendo il tag.
+# Three release channels:
+#   none        ephemeral run artifacts only. Dev builds and bump validation.
+#   continuous  overwrites the single "continuous" prerelease: same URL for the
+#               latest build, no new tag, no accumulation.
+#   tagged      a real release on the tag that triggered the workflow (v1.2.0, v1.2.0-rc1).
 on:
   workflow_call:
     inputs:
       release:
-        description: "none = solo artifact; continuous = riscrive la prerelease continuous; tagged = release sul tag."
+        description: "none = artifacts only; continuous = overwrite the continuous prerelease; tagged = release on the tag."
         type: string
         default: 'none'
       use_cache:
-        description: "Se true usa GitHub Actions Cache per sstate-cache + downloads (build dev)."
+        description: "If true, use GitHub Actions Cache for sstate-cache + downloads (dev builds)."
         type: boolean
         default: false
       sbom:
-        description: "none = niente; standard = SPDX + cve-check (build di tag); full = anche i checksum, su richiesta cliente."
+        description: "none = nothing; standard = SPDX + cve-check; full = also includes checksums."
         type: string
         default: 'none'
       ref:
-        description: "Branch/commit da compilare. Vuoto = ref che ha innescato il workflow."
+        description: "Branch/commit to build. Empty = the ref that triggered the workflow."
         type: string
         required: false
         default: ''
@@ -35,12 +34,9 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    # I permessi NON si dichiarano qui: un reusable non può chiedere più di quanto
-    # il chiamante gli concede (altrimenti "Invalid workflow file"). Li decide chi
-    # chiama: main=write (release), dev-build/bump=read. Vedi `permissions:` nei chiamanti.
+    # Permissions are declared by the caller workflow, not here.
     env:
-      # Radice della cache Yocto, fuori da meta-hailo-soc/build (che NON si cacha).
-      # Deve combaciare con ${TOPDIR}/../../yocto-cache usato in kas/astrial-h15-cache.yml.
+      # Must match ${TOPDIR}/../../yocto-cache used in kas/astrial-h15-cache.yml.
       YOCTO_CACHE_ROOT: ${{ github.workspace }}/yocto-cache
     steps:
       - name: Configure environment
@@ -50,51 +46,42 @@ jobs:
 
       - name: Install KAS
         run: |
-          # Niente "sudo apt-get" qui: l'utente del runner non ha privilegi di root
-          # (separazione voluta, vedi github/T32_incidente_vps.md). I pacchetti di sistema
-          # che servono alla build (build-essential, gawk, texinfo, python3-venv, ...) si
-          # installano una volta sola da root quando si prepara la macchina del runner, non
-          # a ogni esecuzione: l'elenco completo sta in github/STATO.md ("Provisioning del
-          # runner"). Qui, da utente senza sudo, creiamo solo il venv Python per kas.
+          # The runner user has no root privileges; system packages are
+          # provisioned separately ahead of time. Only the Python venv for
+          # kas is created here.
           python3 -m venv "$RUNNER_TEMP/kas-venv"
           "$RUNNER_TEMP/kas-venv/bin/pip" install "kas==5.3"
           echo "$RUNNER_TEMP/kas-venv/bin" >> "$GITHUB_PATH"
 
       - name: Clean leftovers of previous runs
         run: |
-          # Il runner e' persistente: la workspace sopravvive fra un run e l'altro e
-          # `git clone meta-hailo-soc` fallirebbe sul secondo run. La cache Yocto sta in
-          # yocto-cache/, che NON si tocca.
+          # The runner is persistent, so the workspace survives between
+          # runs. yocto-cache/ is left untouched.
           rm -rf meta-hailo-soc release-files failure-logs /tmp/failed.txt /tmp/failed-recipes.txt
 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           path: meta-sysele-bsp
-          # ref vuoto = checkout del ref che ha innescato il workflow (comportamento
-          # invariato per release/schedule). Il bump passa qui il branch bump/poky-*.
+          # Empty ref = checkout the ref that triggered the workflow.
           ref: ${{ inputs.ref }}
 
       - name: Persistent Yocto cache on the runner
-        # ~/yocto-cache/h15 sta fuori da _work: sopravvive a una workspace ripulita o a un
-        # runner riregistrato. Nel workspace resta un link, cosi' kas/astrial-h15-cache.yml
-        # (${TOPDIR}/../../yocto-cache) e YOCTO_CACHE_ROOT non cambiano. Contiene sstate e
-        # downloads (le sole dev build li usano: le ufficiali compilano da zero) e un link
-        # CVE_CHECK -> ../cve-db, il database condiviso fra tutti i prodotti che il timer
-        # della VPS tiene aggiornato (il runner e' uno solo per tutta l'organizzazione, vedi
-        # github/STATO.md: la cache e' divisa per prodotto, il database CVE no).
+        # ~/yocto-cache/h15 lives outside _work, so it survives a workspace
+        # cleanup or runner re-registration. A symlink keeps it reachable at
+        # the workspace path used by kas/astrial-h15-cache.yml.
         if: runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           PERSIST="$HOME/yocto-cache/h15"
           mkdir -p "$PERSIST"
           ln -sfn ../cve-db "$PERSIST/CVE_CHECK"
-          # Prima volta: se nel workspace c'e' gia' una cache vera (non un link), si sposta.
+          # First run: migrate a real (non-symlink) cache already in the workspace.
           if [ -d yocto-cache ] && [ ! -L yocto-cache ]; then
             for d in sstate-cache downloads CVE_CHECK; do
               [ -d "yocto-cache/$d" ] || continue
               if [ -e "$PERSIST/$d" ]; then
-                echo "WARN: $PERSIST/$d esiste gia', lascio yocto-cache/$d dov'e'"
+                echo "WARN: $PERSIST/$d already exists, leaving yocto-cache/$d in place"
               else
                 mv "yocto-cache/$d" "$PERSIST/$d"
               fi
@@ -127,11 +114,11 @@ jobs:
               - meta-sysele-bsp/kas/astrial-h15-machine.yml
           EOF
 
-          # Solo per le build dev: aggiungi l'override che sposta SSTATE_DIR/DL_DIR
-          # sotto ${TOPDIR}/../../yocto-cache, così sono cachabili dalla Actions Cache.
+          # Dev builds only: add the override that moves SSTATE_DIR/DL_DIR under
+          # ${TOPDIR}/../../yocto-cache, so they can be cached by Actions Cache.
           if [ "${{ inputs.use_cache }}" = "true" ]; then
             echo "    - meta-sysele-bsp/kas/astrial-h15-cache.yml" >> astrial-h15-ci.yml
-            echo "Cache override abilitato (astrial-h15-cache.yml)"
+            echo "Cache override enabled (astrial-h15-cache.yml)"
           fi
 
           cat >> astrial-h15-ci.yml <<'EOF'
@@ -195,9 +182,8 @@ jobs:
           path: |
             ${{ env.YOCTO_CACHE_ROOT }}/sstate-cache
             ${{ env.YOCTO_CACHE_ROOT }}/downloads
-          # Chiave unica per run + restore-keys a prefisso: ogni run salva una nuova
-          # cache e riparte dalla più recente (pattern consigliato per cache in crescita).
-          # LRU + eviction a 7 giorni tengono solo il working set caldo.
+          # Unique key per run plus prefix restore-keys: each run saves a new
+          # cache entry and starts from the most recent one.
           key: yocto-cache-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             yocto-cache-${{ runner.os }}-
@@ -205,9 +191,8 @@ jobs:
       - name: Check the CVE database on the runner
         if: inputs.sbom != 'none' && runner.environment == 'self-hosted'
         run: |
-          # Il database lo tiene aggiornato il timer della VPS. Senza, la build prosegue ma
-          # il referto CVE manca (il bbappend su cve-update-nvd2-native lo permette), e una
-          # release senza referto non deve passare inosservata.
+          # Updated by the VPS timer. The build can proceed without it, but
+          # a release with no CVE report must not pass unnoticed.
           DB="$YOCTO_CACHE_ROOT/CVE_CHECK/nvdcve_2-2.db"
           if [ ! -s "$DB" ]; then
             echo "::error::No CVE database at $DB: the VPS update timer has not produced one"
@@ -223,8 +208,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.YOCTO_CACHE_ROOT }}/CVE_CHECK
-          # Cache a se', indipendente da use_cache: il database NVD non e' un
-          # risultato di compilazione, e una release pulita non deve riscaricarlo.
+          # Separate cache, independent of use_cache: the NVD database is
+          # not a build output.
           key: nvd-db-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             nvd-db-${{ runner.os }}-
@@ -233,21 +218,20 @@ jobs:
         run: |
           cd meta-hailo-soc
 
-          # --- limiti di sistema: pseudo apre molti fd, uno per client ---
-          ulimit -n 65536 || echo "WARN: impossibile alzare il limite fd"
+          # pseudo opens many file descriptors, one per client.
+          ulimit -n 65536 || echo "WARN: could not raise the fd limit"
           echo "fd limit: $(ulimit -n) | cpu: $(nproc) | tar: $(tar --version | head -1)"
 
           # Set environment variables for network isolation
           export BB_ISOLATE_NETWORK=0
           export BB_NO_NETWORK=0
 
-          # Versione leggibile del BSP, finisce nel build-info della scheda.
-          # Solo per una release: una build qualunque resta "unreleased".
+          # Human-readable BSP version, only set for a tagged release.
           if [ "${{ inputs.release }}" = "tagged" ]; then
             export SYSELE_BSP_VERSION="${{ github.ref_name }}"
           fi
           export SYSELE_SBOM="${{ inputs.sbom }}"
-          # Serve se la cache nvd-db e' vuota e il database va scaricato.
+          # Used if the nvd-db cache is empty and the database needs downloading.
           export NVD_API_KEY="${{ secrets.NVD_API_KEY }}"
 
           # CI-specific build optimizations - reduce log verbosity
@@ -273,27 +257,27 @@ jobs:
           BUILD=meta-hailo-soc/build
           mkdir -p failure-logs
 
-          echo "===== ultime 200 righe del cooker log ====="
+          echo "===== cooker log, last 200 lines ====="
           COOKER=$(ls -t "$BUILD"/tmp/log/cooker/*/console-latest.log 2>/dev/null | head -1)
-          [ -n "$COOKER" ] && tail -n 200 "$COOKER" || echo "(nessun cooker log)"
+          [ -n "$COOKER" ] && tail -n 200 "$COOKER" || echo "(no cooker log)"
 
-          echo "===== spazio disco / memoria ====="
+          echo "===== disk space / memory ====="
           df -h; free -h
 
-          # 1) path dichiarati da bitbake
+          # 1) paths reported by bitbake
           find "$BUILD/tmp/log" -name '*.log' -exec \
             grep -h "Logfile of failure stored in:" {} + 2>/dev/null \
             | sed 's/.*stored in: //' | tr -d '\r' | sort -u > /tmp/failed.txt
 
-          # 2) fallback: solo i log.do_* che contengono un errore VERO
+          # 2) fallback: log.do_* files that contain a real error
           if [ ! -s /tmp/failed.txt ]; then
-            echo "Nessun 'Logfile of failure': cerco log.do_* con errori"
+            echo "No 'Logfile of failure' found: scanning log.do_* for errors"
             find "$BUILD/tmp/work" -path '*/temp/log.do_*' -newermt '-6 hours' -print0 \
               | xargs -0 -r grep -lE '^(ERROR|FATAL):|Error [0-9]+$|\*\*\* \[' \
               | sort -u > /tmp/failed.txt
           fi
 
-          echo "===== log individuati ====="
+          echo "===== logs found ====="
           cat /tmp/failed.txt
 
           while read -r f; do
@@ -358,20 +342,20 @@ jobs:
         if: always() && inputs.use_cache
         continue-on-error: true
         run: |
-          # Evita che lo sstate cresca all'infinito: tiene solo l'ultima copia di
-          # ogni oggetto duplicato. Best-effort, non deve mai rompere la build.
+          # Keeps the sstate cache from growing unbounded. Best-effort, must
+          # never break the build.
           SCRIPT=meta-hailo-soc/poky/scripts/sstate-cache-management.sh
           if [ -x "$SCRIPT" ] && [ -d "${YOCTO_CACHE_ROOT}/sstate-cache" ]; then
             "$SCRIPT" --cache-dir="${YOCTO_CACHE_ROOT}/sstate-cache" --remove-duplicated -y || true
             du -sh "${YOCTO_CACHE_ROOT}/sstate-cache" "${YOCTO_CACHE_ROOT}/downloads" 2>/dev/null || true
           else
-            echo "Script di prune o sstate-cache non trovati, salto."
+            echo "Prune script or sstate-cache not found, skipping."
           fi
 
       - name: Save Yocto Cache (sstate + downloads)
-        # Salva anche su build fallita: lo sstate parziale è valido e velocizza il run
-        # successivo. best-effort: a budget cache raggiunto (read-only) il save fallisce
-        # senza rompere il workflow.
+        # Saved even on a failed build: partial sstate still speeds up the next
+        # run. Best-effort: a save that fails once the cache quota is hit does
+        # not break the workflow.
         if: always() && inputs.use_cache && runner.environment != 'self-hosted'
         continue-on-error: true
         uses: actions/cache/save@v4
@@ -507,9 +491,6 @@ jobs:
             failure-logs/
           if-no-files-found: warn
 
-      # I due upload stampano centinaia di righe e il link finisce in fondo.
-      # Qui compare da solo, in uno step a se' da aprire nel log. Nella pagina
-      # del run i due artefatti ci sono gia', nella sezione Artifacts.
       - name: Download Links
         if: always()
         env:
@@ -532,10 +513,8 @@ jobs:
         if: inputs.release != 'none'
         run: |
           cd release-files
-          # upload-artifact conserva i percorsi quando le radici sono diverse, quindi
-          # qui dentro i file arrivano annidati sotto meta-hailo-soc/ e meta-sysele-bsp/.
-          # Le note di release li elencano per nome: l'archivio va appiattito, o chi lo
-          # apre trova un albero di sette livelli invece dei file.
+          # Flatten the nested directories upload-artifact produces, so the
+          # release archive has files at the top level, not a deep tree.
           if [ -d "meta-sysele-bsp/scripts" ]; then
             cp -p meta-sysele-bsp/scripts/* .
           fi
@@ -544,14 +523,14 @@ jobs:
           rm -rf meta-hailo-soc meta-sysele-bsp
           chmod +x *.sh *.py hailo15_* uart_* 2>/dev/null || true
 
-          # Se l'appiattimento perde qualcosa, meglio fermarsi che pubblicare un archivio
-          # monco: questi file sono quelli che le note promettono.
+          # Fail the step rather than publish an incomplete archive: these
+          # are exactly the files the release notes promise.
           for f in core-image-hailo-dev-astrial-h15.wic hailo-update-image-astrial-h15.swu \
                    u-boot-tfa.itb scu_bl_cfg_a.bin program_spi_flash.sh; do
-            [ -e "$f" ] || { echo "ERROR: $f non e' nell'archivio dopo l'appiattimento" >&2; exit 1; }
+            [ -e "$f" ] || { echo "ERROR: $f missing from the archive after flattening" >&2; exit 1; }
           done
-          # Nome stabile per la continuous, cosi' l'asset viene sostituito invece di
-          # accumularsi sulla stessa release. Per una release vera, il nome porta il tag.
+          # Stable name for the continuous release, so the asset is replaced
+          # instead of accumulating. A tagged release includes the tag.
           if [ "${{ inputs.release }}" = "tagged" ]; then
             NAME="astrial-h15-yocto-build-${{ github.ref_name }}"
           else
@@ -646,8 +625,7 @@ jobs:
             install it as described in the README. `program_spi_flash.sh` checks for it and
             stops with instructions if it is missing.
           files: ${{ env.ARCHIVE_NAME }}.tar.gz
-          # Una candidata si marca col suffisso del tag, v1.2.0-rc1, che semver
-          # prevede e che ordina prima di v1.2.0.
+          # A release candidate is tagged with a -rc suffix, e.g. v1.2.0-rc1.
           prerelease: ${{ contains(github.ref_name, '-rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

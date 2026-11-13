@@ -1,57 +1,19 @@
 #!/usr/bin/env python3
-"""Produce UNA SBOM SPDX 2.2 di tipo dichiarato, dall'output multi-documento di Yocto.
+"""Produce a single, declared-type SPDX 2.2 SBOM from Yocto's multi-document output.
 
-Si chiamava merge_spdx.py. Il nome e' cambiato perche' descriveva la meccanica invece
-del risultato: la fusione e' il mezzo, non lo scopo. VulnScout l'archivio di Yocto se lo
-scompatta da solo, quindi fondere non serve a lui; serve ad avere un file unico, con un
-TIPO dichiarato e il filtro giusto applicato, da dare a un cliente o a un altro strumento.
-Chi legge il vecchio nome conclude "a noi non serve" e butta via anche il filtro e
-l'etichettatura, che sono la parte che conta.
+Yocto kirkstone (poky 4.0.35) does not produce a single-file SBOM: it
+produces one document per recipe, per package and per runtime, plus an
+index.json, all inside <image>.spdx.tar.zst. The <image>.spdx.json file next
+to the image is not self-contained: it covers one package and references
+the rest via externalDocumentRefs. This script merges them into one file
+with a declared SBOM type (build or deployed) and an optional --lean filter
+that keeps only CONTAINS/DESCRIBES relationships.
 
-VERSIONE PRELIMINARE, NON ANCORA CONTROLLATA.
-=============================================
-Scritta il 2026-10-20 per capire se la fusione fosse praticabile, non per
-produrre un deliverable. Gira e produce un file, ma NESSUNO ha ancora
-verificato che il risultato sia uno SPDX valido ne' che sia completo:
+NOTE: not yet validated against an SPDX validator or a composition-analysis
+tool. Validate before using the output outside the company.
 
-  - non e' stato passato a un validatore SPDX;
-  - non e' stato aperto da nessuno strumento di composition analysis;
-  - la scelta di quali relazioni tenere (--lean) e' una scelta nostra, non
-    una regola dello standard;
-  - i documenti "runtime-*" vengono assorbiti insieme agli altri senza un
-    ragionamento su cosa significhino nel documento finale.
-
-Prima di usarlo per qualcosa che esce dall'azienda, va validato.
-
-Perche' esiste
---------------
-Yocto kirkstone (poky 4.0.35) non produce una SBOM in un file solo. Produce
-un documento per ricetta, uno per pacchetto e uno per runtime, piu' un
-index.json, tutti dentro <immagine>.spdx.tar.zst. Sulla nostra immagine sono
-3564 documenti. Il file <immagine>.spdx.json che sta accanto all'immagine non
-e' autosufficiente: contiene un pacchetto e rimanda agli altri documenti con
-externalDocumentRefs.
-
-Su Yocto scarthgap esiste create-spdx-3.0, disattivato per difetto, che
-produce gia' un documento consolidato. Se passiamo a scarthgap questo script
-probabilmente non serve piu'.
-
-Misure sulla nostra immagine, 2026-10-20
-----------------------------------------
-  documenti letti       3564
-  pacchetti             2053
-  relazioni           273448
-  licenze estratte        79
-  SPDXID in conflitto      0     <- nessuna collisione, non serve rinominare
-  dimensione intera     62,9 MB
-  dimensione --lean      7,3 MB
-
-Gli 80% delle relazioni sono GENERATED_FROM, cioe' il legame fra ogni binario
-e i sorgenti da cui nasce: informazione vera ma di archeologia della build.
---lean tiene solo CONTAINS, DESCRIBES e i loro inversi.
-
-Uso
----
+Usage
+-----
   tar --zstd -xf core-image-...spdx.tar.zst -C /tmp/spdx
   ./make_sbom.py /tmp/spdx -o merged.spdx.json
   ./make_sbom.py /tmp/spdx -o merged.spdx.json --lean
@@ -60,26 +22,22 @@ import argparse, json, pathlib, sys
 
 CONTENT_RELS = {"CONTAINS", "CONTAINED_BY", "DESCRIBES", "DESCRIBED_BY"}
 
-# Pacchetti che vivono solo sulla macchina che compila e non finiscono sulla scheda:
-# -native sono gli strumenti che Yocto si costruisce per se' (il suo openssl per firmare,
-# il suo python per gli script, qemu per emulare), -cross e -crosssdk sono i compilatori
-# incrociati. Sulla nostra immagine valgono oltre 1250 CVE di roba che sul prodotto non c'e'.
+# Packages that only live on the build machine, not on the device: -native
+# are Yocto's own build-time tools, -cross/-crosssdk are cross-toolchains.
 HOST_SUFFIXES = ("-native", "-cross", "-crosssdk", "-cross-canadian")
 HOST_INFIXES = ("-cross-", "-crosssdk-", "-nativesdk-")
 
 
 def is_host_only(name: str) -> bool:
-    """Vero se il pacchetto appartiene all'ambiente di build, non all'immagine."""
+    """True if the package belongs to the build environment, not the image."""
     if not name:
         return False
     return name.endswith(HOST_SUFFIXES) or any(i in name for i in HOST_INFIXES) \
         or name.startswith("nativesdk-")
 
 
-# I tre tipi della tassonomia CISA che ci riguardano. SPDX 2.2 non ha un campo per
-# dichiarare di che tipo e' una SBOM, quindi lo diciamo nel nome del documento e nel
-# commento di creationInfo: tre file senza tipo dichiarato sono peggio di un file solo,
-# perche' chi li riceve non sa quale guardare e finisce per confrontarli fra loro.
+# SPDX 2.2 has no field to declare the SBOM type, so it's recorded in the
+# document name and the creationInfo comment instead.
 SBOM_TYPES = {
     "build": ("Build SBOM",
               "Generated during the build. Includes the build-time dependencies, so it lists "
@@ -91,12 +49,11 @@ SBOM_TYPES = {
 
 
 def load_installed(path):
-    """L'elenco esatto dei pacchetti installati nell'immagine, dal buildhistory.
+    """The exact list of packages installed in the image, from buildhistory.
 
-    E' verita' di fatto, non un'euristica sul nome: Yocto lo scrive sapendo cosa ha
-    messo davvero nel rootfs. Sta in
-      build/buildhistory/images/<machine>/<libc>/<immagine>/installed-package-names.txt
-    e finisce nell'artefatto dei log della CI.
+    Lives at
+      build/buildhistory/images/<machine>/<libc>/<image>/installed-package-names.txt
+    and is published as a CI log artifact.
     """
     return {l.strip() for l in open(path) if l.strip()}
 
@@ -120,11 +77,8 @@ def merge(src: pathlib.Path, name: str, lean: bool, sbom_type: str, installed=No
                 continue
             if sbom_type == "deployed":
                 pname = p.get("name") or ""
-                # Con l'elenco del buildhistory si tiene cio' che e' davvero installato.
-                # Senza, si ripiega sui nomi, che e' un'approssimazione: prende i -native
-                # e i -cross ma lascia dentro i -dev e i -dbg, che sono costruiti e non
-                # installati, e scarta per sbaglio ricette che si chiamano -cross senza
-                # esserlo (depmodwrapper-cross, qemuwrapper-cross, libtool-cross).
+                # With the buildhistory list, keep what's actually installed.
+                # Without it, fall back to name matching (approximate).
                 drop = pname not in installed if installed is not None else is_host_only(pname)
                 if drop:
                     dropped.append(pname)
@@ -135,8 +89,8 @@ def merge(src: pathlib.Path, name: str, lean: bool, sbom_type: str, installed=No
         for r in doc.get("relationships", []):
             if lean and r.get("relationshipType") not in CONTENT_RELS:
                 continue
-            # "DocumentRef-xxx:SPDXRef-yyy" -> "SPDXRef-yyy": gli SPDXID di Yocto
-            # sono gia' univoci fra documenti, quindi basta togliere il prefisso.
+            # "DocumentRef-xxx:SPDXRef-yyy" -> "SPDXRef-yyy": Yocto's SPDXIDs
+            # are already unique across documents.
             for k in ("spdxElementId", "relatedSpdxElement"):
                 v = r.get(k, "")
                 if isinstance(v, str) and v.startswith("DocumentRef-") and ":" in v:
@@ -145,8 +99,7 @@ def merge(src: pathlib.Path, name: str, lean: bool, sbom_type: str, installed=No
 
         for e in doc.get("hasExtractedLicensingInfos", []):
             prev = lic.get(e["licenseId"])
-            # tieni la voce che ha davvero il testo: un documento puo' dichiarare
-            # la licenza con extractedText nullo e un altro con il testo vero.
+            # Keep the entry that actually has the license text.
             if prev is None or (not prev.get("extractedText") and e.get("extractedText")):
                 lic[e["licenseId"]] = e
 
@@ -184,25 +137,25 @@ def merge(src: pathlib.Path, name: str, lean: bool, sbom_type: str, installed=No
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("src", type=pathlib.Path, help="cartella con i documenti estratti")
+    ap.add_argument("src", type=pathlib.Path, help="folder with the extracted documents")
     ap.add_argument("-o", "--out", type=pathlib.Path, default=pathlib.Path("merged.spdx.json"))
     ap.add_argument("-n", "--name", default="merged")
     ap.add_argument("-t", "--type", choices=sorted(SBOM_TYPES), default="build",
-                    help="build = tutto, come lo genera Yocto; deployed = solo cio' che "
-                         "sta sulla scheda, senza gli strumenti dell'host")
+                    help="build = everything Yocto generates; deployed = only what's "
+                         "on the device, excluding host build tools")
     ap.add_argument("--installed", type=pathlib.Path,
-                    help="installed-package-names.txt del buildhistory: con questo il tipo "
-                         "deployed tiene esattamente cio' che e' nell'immagine")
+                    help="buildhistory's installed-package-names.txt: makes the "
+                         "deployed type keep exactly what's in the image")
     ap.add_argument("--lean", action="store_true",
-                    help="tieni solo le relazioni di contenuto, non la storia della build")
+                    help="keep only content relationships, not build provenance")
     a = ap.parse_args()
 
     if not (a.src / "index.json").exists():
-        sys.exit(f"{a.src}/index.json non c'e': estrai prima il .spdx.tar.zst")
+        sys.exit(f"{a.src}/index.json not found: extract the .spdx.tar.zst first")
 
     installed = load_installed(a.installed) if a.installed else None
     if a.type == "deployed" and installed is None:
-        print("  nota: senza --installed il filtro va per nome, che e' approssimato")
+        print("  note: without --installed the filter is name-based (approximate)")
     doc, st = merge(a.src, a.name, a.lean, a.type, installed)
     a.out.write_text(json.dumps(doc, indent=2))
 

@@ -24,7 +24,7 @@ jobs:
     with:
       release: tagged
       use_cache: false
-      # La build di tag e' quella che fa il controllo vero: gira a cache fredda,
-      # quindi rigenera davvero la SBOM invece di ripescarla da sstate.
+      # The tag build runs cold (no cache), so it regenerates the SBOM
+      # rather than pulling it from sstate.
       sbom: standard
     secrets: inherit

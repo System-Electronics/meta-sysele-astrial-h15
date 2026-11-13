@@ -1,13 +1,14 @@
 name: Auto-bump poky (kirkstone point-release)
 
-# Schedulato mensile: controlla se esiste un point-release yocto-4.0.x più recente
-# del pin attuale in kas/astrial-h15-machine.yml. Se sì, apre una PR di bump e la
-# valida con una build end-to-end (no-cache, no-release) nello stesso run.
-# NIENTE auto-merge, NIENTE push su master: merge manuale solo a validazione verde.
-# Solo point-release dentro kirkstone (4.0.x). Mai attraversare il branch LTS.
+# Monthly schedule: checks for a newer yocto-4.0.x point-release than the
+# current pin in kas/astrial-h15-machine.yml. If found, opens a bump PR and
+# validates it with an end-to-end build (no-cache, no-release) in the same run.
+# No auto-merge, no push to master: merge is manual, only after a green
+# validation. Point-releases within kirkstone (4.0.x) only, never crossing
+# the LTS branch.
 on:
   schedule:
-    - cron: '0 3 1 * *'   # primo del mese, 03:00 UTC (solo sul default branch)
+    - cron: '0 3 1 * *'   # first of the month, 03:00 UTC (default branch only)
   workflow_dispatch:
 
 jobs:
@@ -52,14 +53,14 @@ jobs:
 
           NEWEST=$(printf '%s\n%s\n' "$CURRENT" "$LATEST" | sort -V | tail -1)
           if [ "$LATEST" = "$CURRENT" ] || [ "$NEWEST" != "$LATEST" ]; then
-            echo "Già aggiornato ($CURRENT). Niente da fare."
+            echo "Already up to date ($CURRENT). Nothing to do."
             echo "bumped=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          BRANCH="bump/poky-${LATEST#yocto-}"   # es. bump/poky-4.0.36
+          BRANCH="bump/poky-${LATEST#yocto-}"   # e.g. bump/poky-4.0.36
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "Branch $BRANCH già esistente su origin, salto (PR probabilmente già aperta)."
+            echo "Branch $BRANCH already exists on origin, skipping (PR likely already open)."
             echo "bumped=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -79,11 +80,11 @@ jobs:
             --head "$BRANCH" \
             --title "ci: bump poky to ${LATEST}" \
             --body "$(cat <<EOF
-          Bump automatico del pin poky in \`${KAS}\`: **${CURRENT} → ${LATEST}** (point-release kirkstone).
+          Automatic poky pin bump in \`${KAS}\`: **${CURRENT} → ${LATEST}** (kirkstone point-release).
 
-          - Solo il campo \`repos: poky: refspec:\` è cambiato. \`meta-hailo\` resta a \`kirkstone_v5.3.0\`.
-          - Una build di validazione end-to-end (no-cache, no-release) parte **in questo stesso run**.
-          - **Non mergiare** finché non compare il commento \`✅ Bump poky ${LATEST} validato\` e la status \`poky-bump-validation\` è verde.
+          - Only the \`repos: poky: refspec:\` field changed. \`meta-hailo\` stays at \`kirkstone_v5.3.0\`.
+          - An end-to-end validation build (no-cache, no-release) starts **in this same run**.
+          - **Do not merge** until the \`✅ Bump poky ${LATEST} validated\` comment appears and the \`poky-bump-validation\` status is green.
 
           🤖 Generated with [Claude Code](https://claude.com/claude-code)
           EOF
@@ -93,8 +94,7 @@ jobs:
           echo "new_tag=${LATEST}" >> "$GITHUB_OUTPUT"
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
 
-  # Validazione: build identica alla release ma senza pubblicare nulla, sul branch di bump.
-  # Il nuovo poky è già committato nel kas del branch, la build lo legge da sé (nessun refspec da passare).
+  # Validation: same build as a release, but publishes nothing, on the bump branch.
   validate:
     needs: detect-and-open
     if: needs.detect-and-open.outputs.bumped == 'true'
@@ -128,21 +128,21 @@ jobs:
           SHA=$(gh pr view "$BRANCH" --json headRefOid -q .headRefOid)
 
           if [ "$RESULT" = "success" ]; then
-            MSG="✅ Bump poky ${TAG} validato: build completata senza errori."
+            MSG="✅ Bump poky ${TAG} validated: build completed with no errors."
             STATE=success
             {
-              echo "## ✅ Bump poky ${TAG} validato"
-              echo "Build completata senza errori sul branch \`${BRANCH}\`. Sicuro da mergiare dopo review."
+              echo "## ✅ Bump poky ${TAG} validated"
+              echo "Build completed with no errors on branch \`${BRANCH}\`. Safe to merge after review."
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            MSG="❌ Bump poky ${TAG}: build di validazione FALLITA (${RESULT}). Non mergiare."
+            MSG="❌ Bump poky ${TAG}: validation build FAILED (${RESULT}). Do not merge."
             STATE=failure
             {
-              echo "## ❌ Bump poky ${TAG} NON validato"
-              echo "Build di validazione fallita (\`${RESULT}\`) sul branch \`${BRANCH}\`."
+              echo "## ❌ Bump poky ${TAG} NOT validated"
+              echo "Validation build failed (\`${RESULT}\`) on branch \`${BRANCH}\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "[Log del run](${RUN_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Run log](${RUN_URL})" >> "$GITHUB_STEP_SUMMARY"
 
           gh pr comment "$BRANCH" --body "${MSG} [Run](${RUN_URL})"
           gh api "repos/${{ github.repository }}/statuses/${SHA}" \

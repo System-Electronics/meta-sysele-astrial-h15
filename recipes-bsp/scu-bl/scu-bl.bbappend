@@ -1,24 +1,25 @@
-# Ripiego sull'altro slot: predisposto, spento.
+# Fallback to the other slot: wired up, disabled.
 #
-# Hailo descrive un solo slot e mette boot_max_retries a 0xFF, che disattiva il passaggio
-# a un'altra immagine. Qui la forma e' quella del ripiego, i valori di difetto lasciano il
-# comportamento di oggi: con 0x00000000, 0xFF e 0 i due json generati sono identici a
-# quelli di Hailo.
+# Hailo describes a single slot and sets boot_max_retries to 0xFF, which
+# disables falling back to another image. The defaults here (0x00000000,
+# 0xFF, 0) keep today's behavior: both generated json files match Hailo's.
 #
-# Accenderlo vuol dire dare un valore a queste tre variabili, per esempio 0x00078000,
-# 0x02 e 2: cosi' le liste diventano A,B,A e B,A,B, le stesse collaudate su QBAstrial.
-# Il resto segue da solo (sysele-slot-sync, watchdog, ordine di hailo_linux_init).
-# Resta da fare a mano una cosa: programmare davvero lo slot B, perche'
-# program_spi_flash.sh scrive solo l'immagine su 0x0.
+# Enabling it means giving these three variables real values, e.g.
+# 0x00078000, 0x02, 2: the lists become A,B,A and B,A,B, the same pattern
+# validated on QBAstrial. The rest follows (sysele-slot-sync, watchdog,
+# hailo_linux_init ordering).
+#
+# One manual step remains: actually programming slot B, since
+# program_spi_flash.sh only writes the image to 0x0.
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# I valori di difetto stanno in conf/machine/astrial-h15.conf, cosi' li vede
-# anche l'immagine e l'interruttore resta uno solo.
+# Defaults live in conf/machine/astrial-h15.conf, so the image sees them too
+# and there is a single switch.
 
 SRC_URI:append:astrial-h15 = " file://scu_bl_cfg_a.json.in file://scu_bl_cfg_b.json.in"
 
-# do_install, non do_configure: e' li' che il json viene convertito in binario.
+# do_install, not do_configure: that's where the json is turned into binary.
 do_install:prepend:astrial-h15() {
     for slot in a b; do
         sed -e "s|@FALLBACK_OFFSET@|${SYSELE_SCU_FALLBACK_OFFSET}|g" \
