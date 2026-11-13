@@ -1,8 +1,8 @@
 header:
   version: 11
 
-# kas scarta le variabili della shell non dichiarate qui. Il valore e' il difetto,
-# quello della shell vince.
+# kas only passes through shell variables declared here; these are defaults,
+# the shell's value wins.
 env:
   SYSELE_SBOM: "none"
   SYSELE_BSP_VERSION: "unreleased"
@@ -20,49 +20,29 @@ local_conf_header:
     MACHINE_FEATURES:remove = " imx678"
 
   sbom: |
-    # Distinta dei componenti e controllo CVE. Livelli: none, standard (build di tag),
-    # full (aggiunge i checksum, pesa molto).
-    # Gli externalRefs (CPE) non sono qui: si dichiarano con CVE_PRODUCT nelle ricette.
+    # SBOM and CVE check. Levels: none, standard, full (adds checksums).
     SYSELE_SBOM ??= "none"
 
     INHERIT += "${@bb.utils.contains_any('SYSELE_SBOM', 'standard full', 'create-spdx cve-check', '', d)}"
     SPDX_PRETTY = "1"
     SPDX_ARCHIVE_PACKAGED = "${@bb.utils.contains('SYSELE_SBOM', 'full', '1', '0', d)}"
 
-    # Tiene nel referto anche i CVE chiusi da una patch: senza, un analizzatore che
-    # guarda nome e versione li segnala come aperti.
     CVE_CHECK_REPORT_PATCHED = "1"
 
-    # cve-check stampa un avviso per ricetta con tutti i CVE aperti su una riga sola.
-    # Per il kernel sono decine di migliaia di caratteri e kas, che legge l'output con
-    # uno stream asyncio a righe limitate, muore. Il JSON resta.
     CVE_CHECK_SHOW_WARNINGS = "0"
 
-    # Niente CVE per gli strumenti di build. cve-check legge CVE_CHECK_SKIP_RECIPE dal
-    # datastore della ricetta, quindi un override di classe con ${PN} fa sì che ogni
-    # ricetta di quella classe escluda se stessa. Restringe il referto, non la distinta.
+    # Skip CVE checks for build-time-only tools.
     CVE_CHECK_SKIP_RECIPE:append:class-native = " ${PN}"
     CVE_CHECK_SKIP_RECIPE:append:class-nativesdk = " ${PN}"
     CVE_CHECK_SKIP_RECIPE:append:class-cross = " ${PN}"
     CVE_CHECK_SKIP_RECIPE:append:class-crosssdk = " ${PN}"
     CVE_CHECK_SKIP_RECIPE:append:class-cross-canadian = " ${PN}"
 
-    # Un guasto del NIST non deve far cadere la release: vedi il bbappend su
-    # cve-update-nvd2-native.
-    #
-    # Il database NVD sta in un posto fisso, fuori da DL_DIR, che si sposta fra dev
-    # build e release. Serve per poterlo cachare con una chiave sola.
+    # NVD database cache, shared across dev builds and releases.
     CVE_CHECK_DB_DLDIR_FILE = "${TOPDIR}/../../yocto-cache/CVE_CHECK/${CVE_CHECK_DB_FILENAME}"
 
-    # La chiave del NIST. La ricetta la legge come NVDCVE_API_KEY, mentre l'ambiente e il
-    # secret si chiamano NVD_API_KEY: qui si fa il ponte. Con la chiave l'attesa fra le
-    # pagine scende da 6 a 2 secondi, e sono oltre 200 pagine.
     NVDCVE_API_KEY ??= "${NVD_API_KEY}"
 
-    # Il NIST ogni tanto chiude la connessione a meta' di una pagina (IncompleteRead).
-    # Con un database gia' presente l'aggiornamento e' incrementale e tocca poche
-    # pagine, ma il primo scaricamento completo ne fa oltre duecento: cinque tentativi
-    # per pagina non bastano.
     CVE_DB_UPDATE_ATTEMPTS = "20"
 
   bsp_version: |

@@ -2,15 +2,15 @@ name: Astrial H15 Dev Build (cached)
 
 run-name: Astrial H15 Dev Build • ${{ inputs.ref || github.ref_name }}
 
-# Build di sviluppo economica: usa la GitHub Actions Cache (sstate + downloads)
-# per ricompilare solo il delta (~90 min -> ~15-20 min). NON pubblica tag/release,
-# lascia solo gli artifact effimeri del run. Trigger manuale per controllo sui costi.
+# Cheap dev build: uses the GitHub Actions Cache (sstate + downloads) to
+# rebuild only the delta (~90 min -> ~15-20 min). Publishes no tags/releases,
+# only the run's ephemeral artifacts. Manual trigger to control cost.
 #
-# Per compilare un branch sperimentale, lancia il dispatch DA master e scrivi il
-# branch in `ref`. La cache di GitHub e' leggibile solo dal branch che l'ha creata
-# e dal branch di default: partendo da master tutti i branch sperimentali
-# condividono una cache sola invece di scaldarsene una a testa. Le build ufficiali
-# girano con use_cache=false, quindi non leggono nulla di quella cache.
+# To build an experimental branch, dispatch FROM master and put the branch
+# in `ref`. GitHub's cache is only readable by the branch that created it and
+# by the default branch: starting from master lets all experimental branches
+# share one cache instead of each warming its own. Official builds run with
+# use_cache=false and never read from this cache.
 on:
   workflow_dispatch:
     inputs:

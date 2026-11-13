@@ -14,15 +14,16 @@ SRC_URI += " \
 UBOOT_MACHINE = "astrial-h15_defconfig"
 
 do_configure:prepend() {
-    # scripts/check-config.sh concatena tutti i Kconfig con `cat $(find ...)`. Se uno non
-    # finisce con un newline (drivers/pinctrl/hailo/Kconfig, sorgente Hailo), la sua ultima
-    # riga si incolla alla prima del file che `find` elenca dopo, e lo script non vede piu'
-    # `config INPUT` (drivers/input/Kconfig): "You must add new CONFIG options using
-    # Kconfig". L'ordine di `find` dipende dal filesystem, quindi il difetto compare solo
-    # su certe macchine (misurato sulla VPS, non sui runner di GitHub).
+    # scripts/check-config.sh concatenates all Kconfig files with
+    # `cat $(find ...)`. If one doesn't end with a newline
+    # (drivers/pinctrl/hailo/Kconfig, Hailo's source), its last line merges
+    # with the first line of the next file in `find`'s order, hiding
+    # `config INPUT` (drivers/input/Kconfig): "You must add new CONFIG
+    # options using Kconfig". `find`'s order depends on the filesystem, so
+    # this only shows up on some machines.
     find ${S} -name 'Kconfig*' -type f | while read -r f; do
-        # if e non `[ ] &&`: sull'ultimo file il test e' falso e uno stato 1 farebbe
-        # fallire tutta la funzione (la shell di bitbake gira con set -e).
+        # if, not `[ ] &&`: on the last file the test is false, and bitbake's
+        # shell runs with set -e, so a status 1 would fail the whole function.
         if [ -n "$(tail -c1 "$f")" ]; then
             echo >> "$f"
         fi
@@ -46,14 +47,15 @@ do_configure:prepend() {
     cp ${WORKDIR}/configs/astrial-h15_defconfig ${S}/configs/
 }
 
-# Secondi che il kernel aspetta che lo user space apra /dev/watchdog, sul solo avvio da eMMC.
+# Seconds the kernel waits for user space to open /dev/watchdog, eMMC boot only.
 SYSELE_WATCHDOG_OPEN_TIMEOUT ?= "60"
 
 do_configure:append() {
-    # Solo con il ripiego A/B acceso: uno slot il cui user space non parte deve finire
-    # in un reset del watchdog, che il SCU bootloader conta. Il parametro va in
-    # bootargs_mmc e basta: bootargs_rw e bootargs_base li usa anche swupdate-image,
-    # che scarica per minuti senza aprire il watchdog e verrebbe resettato a meta'.
+    # Only with A/B fallback enabled: a slot whose user space never starts
+    # must end in a watchdog reset, which the SCU bootloader counts. The
+    # parameter is added to bootargs_mmc only: bootargs_rw and bootargs_base
+    # are also used by swupdate-image, which downloads for minutes without
+    # opening the watchdog and would be reset midway through.
     if [ "${SYSELE_SCU_AB}" = "1" ] && \
        ! grep -q 'watchdog.open_timeout' ${S}/include/configs/hailo1x_common.h; then
         sed -i 's|\(root=/dev/mmcblk${device_num}p${mmc_rootfs_partition}\)|\1 watchdog.open_timeout=${SYSELE_WATCHDOG_OPEN_TIMEOUT}|' \
