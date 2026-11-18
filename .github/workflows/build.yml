@@ -541,6 +541,27 @@ jobs:
           cd ..
           ls -lh "$NAME.tar.gz"
 
+      - name: Prepare individual SBOM and CVE assets for the release
+        # Same files as inside the tar.gz, published again on their own so
+        # anyone who only wants the SPDX or the CVE report does not have to
+        # download and extract the whole archive.
+        if: inputs.release != 'none' && inputs.sbom != 'none'
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.release }}" = "tagged" ]; then
+            SUFFIX="${{ github.ref_name }}"
+          else
+            SUFFIX="continuous"
+          fi
+          echo "SBOM_PREFIX=astrial-h15-$SUFFIX" >> "$GITHUB_ENV"
+          cd release-files
+          cp -p core-image-hailo-dev-astrial-h15-build.spdx.json "../astrial-h15-$SUFFIX-build.spdx.json"
+          cp -p core-image-hailo-dev-astrial-h15-deployed.spdx.json "../astrial-h15-$SUFFIX-deployed.spdx.json"
+          cp -p cve-summary.json "../astrial-h15-$SUFFIX-cve-summary.json"
+          cp -p cve-summary "../astrial-h15-$SUFFIX-cve-summary.txt"
+          cd ..
+          ls -lh "astrial-h15-$SUFFIX"-*.spdx.json "astrial-h15-$SUFFIX"-cve-summary.*
+
       - name: Read the board tools version expected by the flashing script
         if: inputs.release != 'none'
         run: |
@@ -572,7 +593,12 @@ jobs:
             - Built: ${{ github.event.head_commit.timestamp }}
             - Board tools required: `hailo15_board_tools` ${{ env.BOARD_TOOLS_VERSION }},
               from the Hailo Vision Processor Software Package. See the README.
-          files: ${{ env.ARCHIVE_NAME }}.tar.gz
+          files: |
+            ${{ env.ARCHIVE_NAME }}.tar.gz
+            astrial-h15-*-build.spdx.json
+            astrial-h15-*-deployed.spdx.json
+            astrial-h15-*-cve-summary.json
+            astrial-h15-*-cve-summary.txt
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -615,8 +641,9 @@ jobs:
 
             The two SBOMs describe different things. **Build** lists every package bitbake built,
             **Deployed** only what the image ships, which is the one to hand to someone asking what
-            runs on the board. The same files are also attached to the build as the smaller
-            `astrial-h15-sbom` artifact, for anyone who does not want the whole archive.
+            runs on the board. The SPDX files and the CVE report are also attached to this release
+            individually (`astrial-h15-${{ github.ref_name }}-*`), for anyone who only wants those
+            and not the whole archive.
 
             **Prerequisite, not included in the archive:** flashing the SPI needs Hailo's
             `hailo15_board_tools` Python package, version **${{ env.BOARD_TOOLS_VERSION }}**.
@@ -624,7 +651,12 @@ jobs:
             [Hailo Developer Zone](https://hailo.ai/developer-zone/software-downloads/) and
             install it as described in the README. `program_spi_flash.sh` checks for it and
             stops with instructions if it is missing.
-          files: ${{ env.ARCHIVE_NAME }}.tar.gz
+          files: |
+            ${{ env.ARCHIVE_NAME }}.tar.gz
+            astrial-h15-*-build.spdx.json
+            astrial-h15-*-deployed.spdx.json
+            astrial-h15-*-cve-summary.json
+            astrial-h15-*-cve-summary.txt
           # A release candidate is tagged with a -rc suffix, e.g. v1.2.0-rc1.
           prerelease: ${{ contains(github.ref_name, '-rc') }}
         env:
