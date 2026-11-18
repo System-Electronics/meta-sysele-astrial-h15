@@ -11,24 +11,6 @@ name: Astrial H15 Yocto Build (reusable)
 #               latest build, no new tag, no accumulation.
 #   tagged      a real release on the tag that triggered the workflow (v1.2.0, v1.2.0-rc1).
 on:
-  # TEMPORARY, test-only trigger: lets this reusable workflow be dispatched
-  # directly from a feature branch, to validate a change without going
-  # through main.yml/dev-build.yml. Removed before merging to kirkstone.
-  workflow_dispatch:
-    inputs:
-      release:
-        type: string
-        default: 'none'
-      use_cache:
-        type: boolean
-        default: false
-      sbom:
-        type: string
-        default: 'none'
-      ref:
-        type: string
-        required: false
-        default: ''
   workflow_call:
     inputs:
       release:
