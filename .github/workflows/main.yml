@@ -24,4 +24,7 @@ jobs:
     with:
       release: continuous
       use_cache: false
+      # The canary is the only one of the three triggers that runs unattended and
+      # without review, so it's the one that must catch a CVE regression on its own.
+      sbom: ${{ github.event_name == 'schedule' && 'standard' || 'none' }}
     secrets: inherit
