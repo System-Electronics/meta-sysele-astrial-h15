@@ -1,14 +1,15 @@
 name: Astrial H15 Release
 run-name: Astrial H15 Release • ${{ github.ref_name }}
 
-# Una release nasce solo da un tag spinto a mano. La CI costruisce e allega gli
-# artefatti a quel tag: la versione la decide una persona, non il contatore dei run.
+# A release is born only from a tag pushed by hand, with an annotated message:
+# that message becomes the changelog in the GitHub Release.
 #
-#   git tag -a v1.2.0 -m "..." && git push origin v1.2.0
+#   git tag -a v1.2.0 -m "- Bullet list of what changed in this release"
+#   git push origin v1.2.0
 #
-# Schema: major = linea Yocto (kirkstone 1, scarthgap 2), minor = cambiamento
-# corposo nostro, patch = il resto. Una candidata si chiama v1.2.0-rc1 ed esce
-# marcata prerelease.
+# Scheme: major = Yocto line (kirkstone 1, scarthgap 2), minor = backward-incompatible
+# change, patch = everything else. A candidate is named v1.2.0-rc1 and comes out marked
+# prerelease.
 
 on:
   push:
@@ -16,8 +17,39 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
 
+permissions:
+  contents: read
+
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changelog: ${{ steps.changelog.outputs.text }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Read the changelog from the annotated tag
+        id: changelog
+        run: |
+          TAG="${{ github.ref_name }}"
+          REF_SHA=$(gh api "repos/${{ github.repository }}/git/refs/tags/$TAG" --jq .object.sha)
+          REF_TYPE=$(gh api "repos/${{ github.repository }}/git/refs/tags/$TAG" --jq .object.type)
+          if [ "$REF_TYPE" != "tag" ]; then
+            echo "ERROR: $TAG is a lightweight tag with no message." >&2
+            echo "       Delete it and push an annotated tag instead: git tag -a $TAG -m '...'" >&2
+            exit 1
+          fi
+          MSG=$(gh api "repos/${{ github.repository }}/git/tags/$REF_SHA" --jq .message)
+          {
+            echo "text<<CHANGELOG_EOF"
+            echo "$MSG"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve
     uses: ./.github/workflows/build.yml
     permissions:
       contents: write
@@ -27,4 +59,5 @@ jobs:
       # The tag build runs cold (no cache), so it regenerates the SBOM
       # rather than pulling it from sstate.
       sbom: standard
+      changelog: ${{ needs.resolve.outputs.changelog }}
     secrets: inherit

@@ -30,6 +30,11 @@ on:
         type: string
         required: false
         default: ''
+      changelog:
+        description: "Changelog text for a tagged release body, read from the annotated tag's message."
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -103,7 +108,7 @@ jobs:
           # Copy the checked out meta-sysele-bsp into the correct location
           cp -r ../meta-sysele-bsp ./meta-sysele-bsp
 
-          # Genera il kas CI. L'ultimo include (astrial-h15-machine.yml) porta il pin poky.
+          # Generate the CI kas file. The last include (astrial-h15-machine.yml) carries the poky pin.
           cat > astrial-h15-ci.yml <<'EOF'
           header:
             version: 11
@@ -126,7 +131,7 @@ jobs:
           build_system: openembedded
           EOF
 
-          echo "===== astrial-h15-ci.yml generato ====="
+          echo "===== astrial-h15-ci.yml generated ====="
           cat astrial-h15-ci.yml
 
           # Create secure boot keypair from GitHub secret (with security measures)
@@ -290,7 +295,7 @@ jobs:
 
           grep -rlE "PRIVATE KEY|BEGIN .*KEY" failure-logs/ 2>/dev/null | xargs -r rm -f
 
-          echo "===== raccolti ====="
+          echo "===== collected ====="
           ls -la failure-logs/
           for f in failure-logs/*log.do_*; do
             [ -e "$f" ] || continue
@@ -298,7 +303,7 @@ jobs:
             tail -n 120 "$f"
           done
 
-          echo "===== ambiente ====="
+          echo "===== environment ====="
           nproc; ulimit -n; ulimit -u; tar --version | head -1
 
           echo "===== pseudo.log ====="
@@ -317,12 +322,12 @@ jobs:
           set +e
           cd meta-hailo-soc
 
-          # ricava le ricette fallite dal cooker log
+          # derive the failed recipes from the cooker log
           COOKER=$(ls -t build/tmp/log/cooker/*/console-latest.log | head -1)
           grep -oP '^ERROR: \K[a-z0-9.+-]+(?=-[0-9][^ ]* do_package:)' "$COOKER" \
             | sort -u > /tmp/failed-recipes.txt
 
-          echo "===== ricette da riprovare ====="
+          echo "===== recipes to retry ====="
           cat /tmp/failed-recipes.txt
 
           PASS=0; FAIL=0
@@ -335,7 +340,7 @@ jobs:
             fi
           done < /tmp/failed-recipes.txt
 
-          echo "===== esito: $PASS passate, $FAIL fallite ====="
+          echo "===== result: $PASS passed, $FAIL failed ====="
           exit 0
 
       - name: Prune sstate cache
@@ -611,6 +616,8 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Astrial H15 BSP ${{ github.ref_name }}
           body: |
+            ${{ inputs.changelog }}
+
             **Stack:**
             - Yocto: kirkstone (poky `yocto-4.0.35`)
             - meta-hailo: `kirkstone_v5.3.0`
