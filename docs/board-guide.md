@@ -141,7 +141,7 @@ For rapid deployment without building from source, you can use the prebuilt imag
 Go to the [releases page](https://github.com/System-Electronics-Org/meta-sysele-astrial-h15/releases) and download the latest release artifact. The artifact is a zip file containing all the necessary files, including the `.wic` images.
 
 **Available Images:**
-- `core-image-hailo-dev-astrial-h15.wic` - Complete development image with AI tools
+- `core-image-hailo-dev-astrial-h15-<version>.wic` - Complete development image with AI tools
 
 **Skip to [Operating System Installation](#operating-system-installation) if using prebuilt images.**
 
