@@ -307,10 +307,11 @@ static address `10.0.0.2`, and start the server. The board uses `10.0.0.1`. Full
 > disable PoE on the carrier and keep using its own supply. Do not leave both: decide which one feeds
 > the board before plugging the cable in.
 
-**If you chose the SD card**, write it now, from the release you extracted in Step 1:
+**If you chose the SD card**, write it now, from the release you extracted in Step 1 (the image's
+name carries the release version, e.g. `core-image-hailo-dev-astrial-h15-v1.2.3.wic`):
 
 ```bash
-sudo dd if=meta-hailo-soc/build/tmp/deploy/images/astrial-h15/core-image-hailo-dev-astrial-h15.wic \
+sudo dd if=core-image-hailo-dev-astrial-h15-*.wic \
         of=/dev/sdX bs=4M status=progress
 sync
 ```

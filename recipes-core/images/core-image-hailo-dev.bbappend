@@ -1,6 +1,16 @@
 # Astrial H15 customizations
 # System Electronics
 
+# Standard, lsb_release/os-release-compatible place for the release tag,
+# same value already used for /opt/sysele/share/build-info (SYSELE_BSP_VERSION,
+# the pushed tag in CI, "unreleased" on a local build). ROOTFS_POSTPROCESS_COMMAND
+# runs after /etc/os-release already exists, so this only appends a field.
+ROOTFS_POSTPROCESS_COMMAND += "sysele_append_os_release; "
+
+sysele_append_os_release () {
+    echo 'ASTRIAL_VERSION="${SYSELE_BSP_VERSION}"' >> ${IMAGE_ROOTFS}${sysconfdir}/os-release
+}
+
 # System Electronics board tools. Development image only: a production image
 # leaves this line out and the whole /opt/sysele tree disappears with it.
 IMAGE_INSTALL:append = " sysele-tools evtest sysele-dsi-detection sysele-dsi-touch-test"

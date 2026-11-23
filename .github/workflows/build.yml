@@ -537,13 +537,35 @@ jobs:
           # Stable name for the continuous release, so the asset is replaced
           # instead of accumulating. A tagged release includes the tag.
           if [ "${{ inputs.release }}" = "tagged" ]; then
-            NAME="astrial-h15-yocto-build-${{ github.ref_name }}"
+            SUFFIX="${{ github.ref_name }}"
           else
-            NAME="astrial-h15-yocto-build-continuous"
+            SUFFIX="continuous"
           fi
+          NAME="astrial-h15-yocto-build-$SUFFIX"
           echo "ARCHIVE_NAME=$NAME" >> "$GITHUB_ENV"
-          tar -czf "../$NAME.tar.gz" .
+
+          # Tag the two standalone deliverables with the version, inserted right
+          # before the extension, so extracting several versions into the same
+          # folder doesn't collide them into one filename. Everything
+          # program_spi_flash.sh touches (scu/u-boot/certificate binaries) keeps
+          # its literal name: that script hardcodes them, and they're always
+          # used together as one set right after extracting, not kept around
+          # loose across versions like the image and the update package are.
+          mkdir ../tar-staging
+          for f in *; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              core-image-hailo-dev-astrial-h15.wic)
+                cp -p "$f" "../tar-staging/core-image-hailo-dev-astrial-h15-$SUFFIX.wic" ;;
+              hailo-update-image-astrial-h15.swu)
+                cp -p "$f" "../tar-staging/hailo-update-image-astrial-h15-$SUFFIX.swu" ;;
+              *)
+                cp -p "$f" ../tar-staging/ ;;
+            esac
+          done
+          tar -czf "../$NAME.tar.gz" -C ../tar-staging .
           cd ..
+          rm -rf tar-staging
           ls -lh "$NAME.tar.gz"
 
       - name: Prepare individual SBOM and CVE assets for the release
@@ -630,8 +652,8 @@ jobs:
             - Build Date: ${{ github.event.head_commit.timestamp }}
 
             **Download and extract ${{ env.ARCHIVE_NAME }}.tar.gz to get:**
-            - `core-image-hailo-dev-astrial-h15.wic`: Complete SD card image for initial provisioning or recovery
-            - `hailo-update-image-astrial-h15.swu`: SWUpdate package for updating an already running device
+            - `core-image-hailo-dev-astrial-h15-${{ github.ref_name }}.wic`: Complete SD card image for initial provisioning or recovery
+            - `hailo-update-image-astrial-h15-${{ github.ref_name }}.swu`: SWUpdate package for updating an already running device
             - `fitImage-astrial-h15.bin`: Kernel and device tree
             - `hailo15_uart_recovery_fw.bin`: UART recovery firmware
             - `hailo15_scu_bl.bin`: SCU bootloader
@@ -645,6 +667,11 @@ jobs:
             - `scu_bl_cfg_b.bin`, `scu_bl_cfg_a_remote_update.bin`: the other SCU bootloader configurations
             - `*-build.spdx.json`, `*-deployed.spdx.json`: software bill of materials, SPDX 2.2
             - `cve-summary.json`, `cve-summary`: the CVE report for the recipes in the image
+
+            The image and the update package carry the version in their own name;
+            `program_spi_flash.sh` and everything it flashes (SCU, U-Boot,
+            certificate) keep their plain name, since that script hardcodes them
+            and they're only ever used together, right after extracting.
 
             The two SBOMs describe different things. **Build** lists every package bitbake built,
             **Deployed** only what the image ships, which is the one to hand to someone asking what
