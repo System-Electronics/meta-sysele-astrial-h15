@@ -5,9 +5,9 @@
 # same value already used for /opt/sysele/share/build-info (SYSELE_BSP_VERSION,
 # the pushed tag in CI, "unreleased" on a local build). ROOTFS_POSTPROCESS_COMMAND
 # runs after /etc/os-release already exists, so this only appends a field.
-ROOTFS_POSTPROCESS_COMMAND += "sysele_append_os_release; "
+ROOTFS_POSTPROCESS_COMMAND += "sysele_write_os_release; "
 
-sysele_append_os_release () {
+sysele_write_os_release () {
     echo 'ASTRIAL_VERSION="${SYSELE_BSP_VERSION}"' >> ${IMAGE_ROOTFS}${sysconfdir}/os-release
 }
 
