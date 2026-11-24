@@ -61,10 +61,11 @@ jobs:
       - name: Clean leftovers of previous runs
         run: |
           # The runner is persistent, so the workspace survives between
-          # runs. yocto-cache/ is left untouched.
+          # runs. yocto-cache/ is left untouched; nothing else at the top
+          # level is meant to survive to the next run, including loose
+          # release assets (archive, SBOM, CVE report) from the last one.
           rm -rf meta-hailo-soc release-files failure-logs /tmp/failed.txt /tmp/failed-recipes.txt
-          rm -f astrial-h15-*-build.spdx.json astrial-h15-*-deployed.spdx.json \
-                astrial-h15-*-cve-summary.json astrial-h15-*-cve-summary.txt
+          find . -maxdepth 1 -type f -delete
 
       - name: Checkout repository
         uses: actions/checkout@v4
