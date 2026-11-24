@@ -636,6 +636,66 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Write the release notes
+        # Quoted heredoc: the ${{ }} expressions below are substituted by
+        # Actions before the shell ever sees this, but the changelog text
+        # itself (from the tag message) is not meant to be, so the shell
+        # must not interpret it either (it can contain $ or backticks).
+        # One file, used both as the release body and as a release asset,
+        # so SharePoint packaging can take it as is.
+        if: inputs.release == 'tagged'
+        run: |
+          cat > RELEASE_NOTES.txt <<'NOTES_EOF'
+          ${{ inputs.changelog }}
+
+          **Stack:**
+          - Yocto: kirkstone (poky `yocto-4.0.35`)
+          - meta-hailo: `kirkstone_v5.3.0`
+          - Hailo Vision Processor package: 1.12.0
+          - Kernel: 5.15.32
+
+          **Build Information:**
+          - Branch: ${{ github.ref_name }}
+          - Commit: ${{ github.sha }}
+          - Build Date: ${{ github.event.head_commit.timestamp }}
+
+          **Download and extract ${{ env.ARCHIVE_NAME }}.tar.gz to get:**
+          - `core-image-hailo-dev-astrial-h15-${{ github.ref_name }}.wic`: Complete SD card image for initial provisioning or recovery
+          - `hailo-update-image-astrial-h15-${{ github.ref_name }}.swu`: SWUpdate package for updating an already running device
+          - `fitImage-astrial-h15.bin`: Kernel and device tree
+          - `hailo15_uart_recovery_fw.bin`: UART recovery firmware
+          - `hailo15_scu_bl.bin`: SCU bootloader
+          - `scu_bl_cfg_a.bin`: SCU bootloader configuration
+          - `hailo15_scu_fw.bin`: SCU firmware
+          - `u-boot.dtb.signed`: Signed U-Boot device tree
+          - `u-boot-spl.bin`: U-Boot SPL
+          - `u-boot-initial-env`: U-Boot initial environment
+          - `customer_certificate.bin`: Customer certificate
+          - `u-boot-tfa.itb`: U-Boot TFA
+          - `scu_bl_cfg_b.bin`, `scu_bl_cfg_a_remote_update.bin`: the other SCU bootloader configurations
+          - `*-build.spdx.json`, `*-deployed.spdx.json`: software bill of materials, SPDX 2.2
+          - `cve-summary.json`, `cve-summary`: the CVE report for the recipes in the image
+          - `RELEASE_NOTES.txt`: this file
+
+          The image and the update package carry the version in their own name;
+          `program_spi_flash.sh` and everything it flashes (SCU, U-Boot,
+          certificate) keep their plain name, since that script hardcodes them
+          and they're only ever used together, right after extracting.
+
+          The two SBOMs describe different things. **Build** lists every package bitbake built,
+          **Deployed** only what the image ships, which is the one to hand to someone asking what
+          runs on the board. The SPDX files and the CVE report are also attached to this release
+          individually (`astrial-h15-${{ github.ref_name }}-*`), for anyone who only wants those
+          and not the whole archive.
+
+          **Prerequisite, not included in the archive:** flashing the SPI needs Hailo's
+          `hailo15_board_tools` Python package, version **${{ env.BOARD_TOOLS_VERSION }}**.
+          Take it from the Hailo Vision Processor Software Package for Hailo-15H on the
+          [Hailo Developer Zone](https://hailo.ai/developer-zone/software-downloads/) and
+          install it as described in the README. `program_spi_flash.sh` checks for it and
+          stops with instructions if it is missing.
+          NOTES_EOF
+
       - name: Publish the release for the pushed tag
         if: inputs.release == 'tagged'
         uses: softprops/action-gh-release@v3
@@ -643,56 +703,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: Astrial H15 BSP ${{ github.ref_name }}
-          body: |
-            ${{ inputs.changelog }}
-
-            **Stack:**
-            - Yocto: kirkstone (poky `yocto-4.0.35`)
-            - meta-hailo: `kirkstone_v5.3.0`
-            - Hailo Vision Processor package: 1.12.0
-            - Kernel: 5.15.32
-
-            **Build Information:**
-            - Branch: ${{ github.ref_name }}
-            - Commit: ${{ github.sha }}
-            - Build Date: ${{ github.event.head_commit.timestamp }}
-
-            **Download and extract ${{ env.ARCHIVE_NAME }}.tar.gz to get:**
-            - `core-image-hailo-dev-astrial-h15-${{ github.ref_name }}.wic`: Complete SD card image for initial provisioning or recovery
-            - `hailo-update-image-astrial-h15-${{ github.ref_name }}.swu`: SWUpdate package for updating an already running device
-            - `fitImage-astrial-h15.bin`: Kernel and device tree
-            - `hailo15_uart_recovery_fw.bin`: UART recovery firmware
-            - `hailo15_scu_bl.bin`: SCU bootloader
-            - `scu_bl_cfg_a.bin`: SCU bootloader configuration
-            - `hailo15_scu_fw.bin`: SCU firmware
-            - `u-boot.dtb.signed`: Signed U-Boot device tree
-            - `u-boot-spl.bin`: U-Boot SPL
-            - `u-boot-initial-env`: U-Boot initial environment
-            - `customer_certificate.bin`: Customer certificate
-            - `u-boot-tfa.itb`: U-Boot TFA
-            - `scu_bl_cfg_b.bin`, `scu_bl_cfg_a_remote_update.bin`: the other SCU bootloader configurations
-            - `*-build.spdx.json`, `*-deployed.spdx.json`: software bill of materials, SPDX 2.2
-            - `cve-summary.json`, `cve-summary`: the CVE report for the recipes in the image
-
-            The image and the update package carry the version in their own name;
-            `program_spi_flash.sh` and everything it flashes (SCU, U-Boot,
-            certificate) keep their plain name, since that script hardcodes them
-            and they're only ever used together, right after extracting.
-
-            The two SBOMs describe different things. **Build** lists every package bitbake built,
-            **Deployed** only what the image ships, which is the one to hand to someone asking what
-            runs on the board. The SPDX files and the CVE report are also attached to this release
-            individually (`astrial-h15-${{ github.ref_name }}-*`), for anyone who only wants those
-            and not the whole archive.
-
-            **Prerequisite, not included in the archive:** flashing the SPI needs Hailo's
-            `hailo15_board_tools` Python package, version **${{ env.BOARD_TOOLS_VERSION }}**.
-            Take it from the Hailo Vision Processor Software Package for Hailo-15H on the
-            [Hailo Developer Zone](https://hailo.ai/developer-zone/software-downloads/) and
-            install it as described in the README. `program_spi_flash.sh` checks for it and
-            stops with instructions if it is missing.
+          body_path: RELEASE_NOTES.txt
           files: |
             ${{ env.ARCHIVE_NAME }}.tar.gz
+            RELEASE_NOTES.txt
             ${{ env.SBOM_PREFIX }}-build.spdx.json
             ${{ env.SBOM_PREFIX }}-deployed.spdx.json
             ${{ env.SBOM_PREFIX }}-cve-summary.json
