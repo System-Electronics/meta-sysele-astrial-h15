@@ -63,6 +63,8 @@ jobs:
           # The runner is persistent, so the workspace survives between
           # runs. yocto-cache/ is left untouched.
           rm -rf meta-hailo-soc release-files failure-logs /tmp/failed.txt /tmp/failed-recipes.txt
+          rm -f astrial-h15-*-build.spdx.json astrial-h15-*-deployed.spdx.json \
+                astrial-h15-*-cve-summary.json astrial-h15-*-cve-summary.txt
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -543,6 +545,9 @@ jobs:
           fi
           NAME="astrial-h15-yocto-build-$SUFFIX"
           echo "ARCHIVE_NAME=$NAME" >> "$GITHUB_ENV"
+          # Set unconditionally, even when this build has no SBOM: the
+          # release step below references it regardless of inputs.sbom.
+          echo "SBOM_PREFIX=astrial-h15-$SUFFIX" >> "$GITHUB_ENV"
 
           # Tag the two standalone deliverables with the version, inserted right
           # before the extension, so extracting several versions into the same
@@ -622,10 +627,10 @@ jobs:
               from the Hailo Vision Processor Software Package. See the README.
           files: |
             ${{ env.ARCHIVE_NAME }}.tar.gz
-            astrial-h15-*-build.spdx.json
-            astrial-h15-*-deployed.spdx.json
-            astrial-h15-*-cve-summary.json
-            astrial-h15-*-cve-summary.txt
+            ${{ env.SBOM_PREFIX }}-build.spdx.json
+            ${{ env.SBOM_PREFIX }}-deployed.spdx.json
+            ${{ env.SBOM_PREFIX }}-cve-summary.json
+            ${{ env.SBOM_PREFIX }}-cve-summary.txt
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -687,10 +692,10 @@ jobs:
             stops with instructions if it is missing.
           files: |
             ${{ env.ARCHIVE_NAME }}.tar.gz
-            astrial-h15-*-build.spdx.json
-            astrial-h15-*-deployed.spdx.json
-            astrial-h15-*-cve-summary.json
-            astrial-h15-*-cve-summary.txt
+            ${{ env.SBOM_PREFIX }}-build.spdx.json
+            ${{ env.SBOM_PREFIX }}-deployed.spdx.json
+            ${{ env.SBOM_PREFIX }}-cve-summary.json
+            ${{ env.SBOM_PREFIX }}-cve-summary.txt
           # A release candidate is tagged with a -rc suffix, e.g. v1.2.0-rc1.
           prerelease: ${{ contains(github.ref_name, '-rc') }}
         env:
