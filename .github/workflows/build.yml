@@ -269,6 +269,17 @@ jobs:
             exit 1
           fi
 
+      - name: Read the kernel version actually built
+        # Measured, not hand-typed, for the release notes: read directly from
+        # the build's own deploy dir, while it still has the full content.
+        # Artifact upload further down only carries an explicit file list,
+        # which does not include this manifest.
+        if: inputs.release != 'none'
+        run: |
+          MANIFEST=$(ls meta-hailo-soc/build/tmp/deploy/images/astrial-h15/core-image-hailo-dev-astrial-h15-*.rootfs.manifest | head -1)
+          KERNEL_VER=$(awk '$1 ~ /^kernel-[0-9]/ { sub(/-r[0-9]+$/, "", $3); print $3; exit }' "$MANIFEST")
+          echo "KERNEL_VER=$KERNEL_VER" >> "$GITHUB_ENV"
+
       - name: Collect Failed Task Logs
         if: failure()
         run: |
@@ -539,14 +550,6 @@ jobs:
           fi
           cp -p meta-hailo-soc/build/tmp/deploy/images/astrial-h15/* . 2>/dev/null || true
           cp -rp meta-hailo-soc/build/tmp/log/cve/* . 2>/dev/null || true
-
-          # Measured, not hand-typed, for the release notes: read from the
-          # image's own manifest, same approach already in use on
-          # meta-sysele-astrial-imx8.
-          KERNEL_VER=$(awk '$1 ~ /^kernel-[0-9]/ { sub(/-r[0-9]+$/, "", $3); print $3; exit }' \
-            core-image-hailo-dev-astrial-h15.manifest)
-          echo "KERNEL_VER=$KERNEL_VER" >> "$GITHUB_ENV"
-
           rm -rf meta-hailo-soc meta-sysele-bsp
           chmod +x *.sh *.py hailo15_* uart_* 2>/dev/null || true
 
