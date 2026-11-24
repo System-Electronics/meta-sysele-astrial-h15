@@ -109,11 +109,8 @@ jobs:
             meta-sysele-bsp/conf/layer.conf)
           POKY_REF=$(awk '/^  poky:/{f=1} f && /refspec:/{sub(/.*refspec:[ \t]*/,""); print; exit}' \
             meta-sysele-bsp/kas/astrial-h15-machine.yml)
-          META_HAILO_REF=$(awk '/^  meta-hailo:/{f=1} f && /refspec:/{sub(/.*refspec:[ \t]*/,""); print; exit}' \
-            meta-sysele-bsp/kas/astrial-h15-vpu-base.yml)
           echo "YOCTO_CODENAME=$YOCTO_CODENAME" >> "$GITHUB_ENV"
           echo "POKY_REF=$POKY_REF" >> "$GITHUB_ENV"
-          echo "META_HAILO_REF=$META_HAILO_REF" >> "$GITHUB_ENV"
 
           # Clone the official Hailo 1.12 repository
           HAILO_SOC_TAG=1.12.0
@@ -542,6 +539,14 @@ jobs:
           fi
           cp -p meta-hailo-soc/build/tmp/deploy/images/astrial-h15/* . 2>/dev/null || true
           cp -rp meta-hailo-soc/build/tmp/log/cve/* . 2>/dev/null || true
+
+          # Measured, not hand-typed, for the release notes: read from the
+          # image's own manifest, same approach already in use on
+          # meta-sysele-astrial-imx8.
+          KERNEL_VER=$(awk '$1 ~ /^kernel-[0-9]/ { sub(/-r[0-9]+$/, "", $3); print $3; exit }' \
+            core-image-hailo-dev-astrial-h15.manifest)
+          echo "KERNEL_VER=$KERNEL_VER" >> "$GITHUB_ENV"
+
           rm -rf meta-hailo-soc meta-sysele-bsp
           chmod +x *.sh *.py hailo15_* uart_* 2>/dev/null || true
 
@@ -664,9 +669,9 @@ jobs:
 
           **Stack:**
           - Yocto: ${{ env.YOCTO_CODENAME }} (poky `${{ env.POKY_REF }}`)
-          - meta-hailo: `${{ env.META_HAILO_REF }}`
+          - meta-hailo: `kirkstone_v5.3.0`
           - Hailo Vision Processor package: ${{ env.HAILO_SOC_TAG }}
-          - Kernel: 5.15.32
+          - Kernel: ${{ env.KERNEL_VER }}
 
           **Build Information:**
           - Branch: ${{ github.ref_name }}
